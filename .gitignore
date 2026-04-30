@@ -13,3 +13,7 @@ Android APK/
 nl.nuon.laadpunten/
 nl.nuon.laadpunten_decompiled/
 tmp_appdata/
+
+# Local research notes and probe scripts are not part of the HACS package.
+docs/
+scripts/
