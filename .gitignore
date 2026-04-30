@@ -1,0 +1,15 @@
+.env
+**/.incharge_token
+**/.incharge_tokens.json
+**/.incharge_app_device.json
+**/.incharge_app_oauth_tokens.json
+**/.incharge_public_device.json
+__pycache__/
+*.pyc
+
+# Reverse-engineering and local test artifacts
+ADB/
+Android APK/
+nl.nuon.laadpunten/
+nl.nuon.laadpunten_decompiled/
+tmp_appdata/

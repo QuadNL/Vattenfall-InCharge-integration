@@ -1,0 +1,74 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Vattenfall InCharge",
+        "description": "Create a local Vattenfall InCharge session for public charging stations and optional MyCharge account data.",
+        "data": {
+          "name": "Name",
+          "poll_minutes": "Polling interval in minutes"
+        }
+      },
+      "add_first_station": {
+        "title": "Add first charging station",
+        "description": "Add charging point by name, for example VA5672 or QW7214. You can find the charging point name in the Vattenfall InCharge app. Vattenfall InCharge stations are fully supported. Other networks are partially supported.",
+        "data": {
+          "search_term": "Charging point name"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to Vattenfall InCharge",
+      "charging_station_not_found": "Charging station not found"
+    },
+    "abort": {
+      "already_configured": "This Vattenfall InCharge device is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Manage Vattenfall InCharge",
+        "menu_options": {
+          "add_charging_point": "Add charging point",
+          "remove_charging_points": "Remove charging point",
+          "mycharge_account": "Add MyCharge account",
+          "advanced": "Advanced"
+        }
+      },
+      "add_charging_point": {
+        "title": "Add charging point",
+        "description": "Add charging point by name, for example VA5672 or QW7214. You can find the charging point name in the Vattenfall InCharge app. Vattenfall InCharge stations are fully supported. Other networks are partially supported.",
+        "data": {
+          "search_term": "Charging point name"
+        }
+      },
+      "remove_charging_points": {
+        "title": "Remove charging point",
+        "description": "Select one or more configured stations to remove.",
+        "data": {
+          "remove_station_uuids": "Configured stations"
+        }
+      },
+      "mycharge_account": {
+        "title": "Add MyCharge account",
+        "description": "Open the MyCharge login URL below in your browser, complete the login and OTP flow, then paste the full final callback URL here. If your browser shows an error after login, copy the URL from the address bar or browser error message.\n\n{auth_url}",
+        "data": {
+          "callback_url": "MyCharge callback URL"
+        }
+      },
+      "advanced": {
+        "title": "Advanced",
+        "description": "Update settings that apply to the whole integration.",
+        "data": {
+          "poll_minutes": "Polling interval in minutes"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to Vattenfall InCharge",
+      "charging_station_not_found": "Charging station not found",
+      "invalid_auth_state": "The returned login state did not match the generated session"
+    }
+  }
+}
