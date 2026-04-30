@@ -4,11 +4,12 @@ Home Assistant custom integration for Vattenfall InCharge public charging statio
 
 ## Features
 
-- Add public charging stations by charging point name, for example `VA5672` or `QW7214`
+- Add public charging stations by charging point name, for example `AB1234` or `XY6789`
 - Poll charging point status, connector details, pricing, location and availability
 - Add and remove configured charging stations from the integration settings
 - Connect a MyCharge account with the Vattenfall login and OTP flow
 - Expose basic MyCharge account status and account hierarchy data
+- Expose MyCharge charging energy and charging time totals for the last 30 days
 
 Vattenfall InCharge stations are fully supported. Other charging networks exposed through the same app API are best effort and may return less consistent names or grouping.
 
@@ -63,8 +64,10 @@ Current MyCharge entities:
 
 - `MyCharge status`
 - `MyCharge account`
+- `MyCharge charging energy last 30 days`
+- `MyCharge charging time last 30 days`
 
-Future MyCharge features may include charging cards, charging history, costs, charging duration and report download support.
+Future MyCharge features may include charging cards, costs and report download support.
 
 ## Entities
 

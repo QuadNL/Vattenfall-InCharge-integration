@@ -11,8 +11,9 @@ import re
 import secrets
 import time
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import urlencode
 
 from aiohttp import ClientError
 
@@ -329,6 +330,147 @@ class InChargeClient:
             bearer_token=id_token,
         )
 
+    @staticmethod
+    def _as_float(value: Any) -> float | None:
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            normalized = value.strip().replace(",", ".")
+            try:
+                return float(normalized)
+            except ValueError:
+                return None
+        return None
+
+    @classmethod
+    def _energy_value_kwh(cls, key: str, value: Any) -> float | None:
+        lowered = key.casefold()
+        number = cls._as_float(value)
+        if number is None:
+            return None
+        if "kwh" in lowered:
+            return number
+        if "wh" in lowered and "kwh" not in lowered:
+            return number / 1000
+        if "energy" in lowered or "consumption" in lowered:
+            return number
+        return None
+
+    @classmethod
+    def _duration_value_hours(cls, key: str, value: Any) -> float | None:
+        lowered = key.casefold()
+        number = cls._as_float(value)
+        if number is not None:
+            if "duration" not in lowered and "chargingtime" not in lowered:
+                return None
+            if "millisecond" in lowered or lowered.endswith("ms"):
+                return number / 3_600_000
+            if "second" in lowered or lowered.endswith("sec") or lowered.endswith("s"):
+                return number / 3600
+            if "minute" in lowered or lowered.endswith("min"):
+                return number / 60
+            return number
+
+        if isinstance(value, str):
+            match = re.fullmatch(
+                r"PT(?:(?P<hours>\d+(?:\.\d+)?)H)?(?:(?P<minutes>\d+(?:\.\d+)?)M)?(?:(?P<seconds>\d+(?:\.\d+)?)S)?",
+                value.strip(),
+            )
+            if match:
+                hours = float(match.group("hours") or 0)
+                minutes = float(match.group("minutes") or 0)
+                seconds = float(match.group("seconds") or 0)
+                return hours + minutes / 60 + seconds / 3600
+        return None
+
+    @classmethod
+    def _summarize_charging_history(cls, payload: Any) -> dict[str, Any]:
+        energy_kwh = 0.0
+        duration_hours = 0.0
+        energy_matches = 0
+        duration_matches = 0
+        item_count = 0
+        top_level_keys: list[str] = []
+
+        if isinstance(payload, dict):
+            top_level_keys = sorted(str(key) for key in payload.keys())
+        elif isinstance(payload, list):
+            item_count = len(payload)
+
+        def walk(value: Any, parent_key: str = "") -> None:
+            nonlocal energy_kwh, duration_hours, energy_matches, duration_matches, item_count
+            if isinstance(value, dict):
+                if parent_key:
+                    item_count += 1
+                for child_key, child_value in value.items():
+                    key = str(child_key)
+                    energy = cls._energy_value_kwh(key, child_value)
+                    if energy is not None:
+                        energy_kwh += energy
+                        energy_matches += 1
+                    duration = cls._duration_value_hours(key, child_value)
+                    if duration is not None:
+                        duration_hours += duration
+                        duration_matches += 1
+                    if isinstance(child_value, (dict, list)):
+                        walk(child_value, key)
+            elif isinstance(value, list):
+                item_count += len(value)
+                for item in value:
+                    walk(item, parent_key)
+
+        walk(payload)
+        return {
+            "energy_kwh": round(energy_kwh, 3),
+            "duration_hours": round(duration_hours, 3),
+            "energy_field_matches": energy_matches,
+            "duration_field_matches": duration_matches,
+            "source_item_count": item_count,
+            "source_top_level_keys": top_level_keys,
+        }
+
+    async def async_get_mycharge_charging_history_summary(
+        self,
+        *,
+        period_days: int = 30,
+    ) -> dict[str, Any]:
+        id_token = str(self.mycharge_auth.get("tokens", {}).get("id_token", ""))
+        if not id_token:
+            raise InChargeApiError("No MyCharge id_token available.")
+
+        profile = self.mycharge_auth.get("profile") or self.build_mycharge_profile(
+            self.mycharge_auth.get("tokens", {})
+        )
+        account_number = profile.get("account_number")
+        if not account_number:
+            raise InChargeApiError("No MyCharge account number available.")
+
+        end = datetime.now(UTC)
+        start = end - timedelta(days=period_days)
+        query = urlencode(
+            {
+                "startTime": start.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+                "endTime": end.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+                "selectedAccount": account_number,
+            }
+        )
+        payload = await self._portal_request(
+            "GET",
+            f"/usage-data-pcu-readmodel/api/pcu-charging-history?{query}",
+            bearer_token=id_token,
+            accept="application/vnd.vattenfall.daily-charging-summary+json",
+        )
+        summary = self._summarize_charging_history(payload)
+        return {
+            **summary,
+            "period_days": period_days,
+            "period_start": start.isoformat(timespec="seconds").replace("+00:00", "Z"),
+            "period_end": end.isoformat(timespec="seconds").replace("+00:00", "Z"),
+            "account_number": account_number,
+        }
+
     async def async_get_mycharge_overview(self) -> dict[str, Any]:
         tokens = self.mycharge_auth.get("tokens", {})
         if tokens.get("refresh_token") and self.mycharge_tokens_need_refresh(tokens):
@@ -352,11 +494,19 @@ class InChargeClient:
                     self.mycharge_auth.get("tokens", {})
                 ),
             }
+        charging_history = None
+        charging_history_error = None
+        try:
+            charging_history = await self.async_get_mycharge_charging_history_summary()
+        except InChargeApiError as err:
+            charging_history_error = str(err)
         return {
             "connected": True,
             "status": "Connected",
             "profile": profile,
             "account_hierarchy": hierarchy,
+            "charging_history": charging_history,
+            "charging_history_error": charging_history_error,
             "last_checked": datetime.now(UTC).isoformat(),
             "token_seconds_left": self.mycharge_token_seconds_left(
                 self.mycharge_auth.get("tokens", {})

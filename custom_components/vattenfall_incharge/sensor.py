@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
+from homeassistant.const import UnitOfEnergy, UnitOfTime
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -26,6 +27,8 @@ async def async_setup_entry(
             [
                 InChargeMyChargeStatusSensor(coordinator),
                 InChargeMyChargeAccountSensor(coordinator),
+                InChargeMyChargeEnergySensor(coordinator),
+                InChargeMyChargeDurationSensor(coordinator),
             ]
         )
     async_add_entities(entities)
@@ -173,3 +176,73 @@ class InChargeMyChargeAccountSensor(InChargeMyChargeCoordinatorEntity, SensorEnt
             "scope": self.mycharge_profile.get("scope"),
             "account_hierarchy": self.mycharge_data.get("account_hierarchy"),
         }
+
+
+class InChargeMyChargeChargingHistorySensor(
+    InChargeMyChargeCoordinatorEntity, SensorEntity
+):
+    """Base sensor for MyCharge charging-history totals."""
+
+    @property
+    def _history(self) -> dict:
+        return self.mycharge_data.get("charging_history") or {}
+
+    @property
+    def available(self) -> bool:
+        return bool(self._history)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {
+            "period_days": self._history.get("period_days"),
+            "period_start": self._history.get("period_start"),
+            "period_end": self._history.get("period_end"),
+            "account_number": self._history.get("account_number"),
+            "source_item_count": self._history.get("source_item_count"),
+            "energy_field_matches": self._history.get("energy_field_matches"),
+            "duration_field_matches": self._history.get("duration_field_matches"),
+            "source_top_level_keys": self._history.get("source_top_level_keys"),
+            "error": self.mycharge_data.get("charging_history_error"),
+        }
+
+
+class InChargeMyChargeEnergySensor(InChargeMyChargeChargingHistorySensor):
+    """Total MyCharge charging energy for the recent period."""
+
+    icon = "mdi:lightning-bolt"
+    device_class = SensorDeviceClass.ENERGY
+    native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._account_key}_charging_energy_30d"
+
+    @property
+    def name(self) -> str:
+        return "MyCharge charging energy last 30 days"
+
+    @property
+    def native_value(self) -> float | None:
+        return self._history.get("energy_kwh")
+
+
+class InChargeMyChargeDurationSensor(InChargeMyChargeChargingHistorySensor):
+    """Total MyCharge charging duration for the recent period."""
+
+    icon = "mdi:timer-outline"
+    device_class = SensorDeviceClass.DURATION
+    native_unit_of_measurement = UnitOfTime.HOURS
+    state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._account_key}_charging_duration_30d"
+
+    @property
+    def name(self) -> str:
+        return "MyCharge charging time last 30 days"
+
+    @property
+    def native_value(self) -> float | None:
+        return self._history.get("duration_hours")
