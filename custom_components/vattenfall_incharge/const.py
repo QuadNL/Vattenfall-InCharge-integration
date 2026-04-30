@@ -2,7 +2,7 @@
 
 from datetime import timedelta
 
-DOMAIN = "vattenfall_incharge_public_stations"
+DOMAIN = "vattenfall_incharge"
 DEFAULT_NAME = "Vattenfall InCharge"
 DEFAULT_POLL_MINUTES = 15
 DEFAULT_APK_SHA1 = "aa08ea4e0a721e5a5f8d81f1e7c7fbd87f8d3a5f"

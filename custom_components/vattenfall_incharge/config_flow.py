@@ -1,4 +1,4 @@
-"""Config flow for the Vattenfall InCharge Public Stations integration."""
+"""Config flow for the Vattenfall InCharge integration."""
 
 from __future__ import annotations
 

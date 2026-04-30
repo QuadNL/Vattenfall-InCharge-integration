@@ -64,7 +64,7 @@ class InChargeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             CONF_MYCHARGE: self.client.mycharge_auth,
                         },
                     )
-            except Exception:  # pragma: no cover - we still want public stations alive
+            except Exception:  # pragma: no cover - keep station polling alive
                 _LOGGER.exception("Failed to update MyCharge account data")
                 mycharge_data = {
                     "connected": False,

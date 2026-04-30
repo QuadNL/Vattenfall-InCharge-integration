@@ -27,7 +27,7 @@ Vattenfall InCharge stations are fully supported. Other charging networks expose
 Copy this folder into your Home Assistant config directory:
 
 ```text
-custom_components/vattenfall_incharge_public_stations
+custom_components/vattenfall_incharge
 ```
 
 Then restart Home Assistant.
@@ -84,7 +84,7 @@ Each configured charging point exposes a status sensor with useful attributes, i
 The integration domain is currently:
 
 ```text
-vattenfall_incharge_public_stations
+vattenfall_incharge
 ```
 
 The visible integration name is:
@@ -93,4 +93,4 @@ The visible integration name is:
 Vattenfall InCharge
 ```
 
-The domain is intentionally kept stable to avoid breaking existing Home Assistant installations.
+This domain is intentionally broad enough for both public charging stations and MyCharge account features.

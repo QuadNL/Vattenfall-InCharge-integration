@@ -1,12 +1,12 @@
 {
-  "domain": "vattenfall_incharge_public_stations",
+  "domain": "vattenfall_incharge",
   "name": "Vattenfall InCharge",
   "codeowners": ["@QuadNL"],
   "config_flow": true,
   "documentation": "https://github.com/QuadNL/Vattenfall-InCharge-integration",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
-  "loggers": ["custom_components.vattenfall_incharge_public_stations"],
+  "loggers": ["custom_components.vattenfall_incharge"],
   "requirements": [],
   "version": "0.2.0"
 }
