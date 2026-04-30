@@ -478,16 +478,43 @@ class InChargeClient:
                 "selectedAccount": account_number,
             }
         )
-        csv_text = await self._portal_request(
-            "GET",
-            f"/usage-data-pcu-readmodel/api/pcu-charging-history?{query}",
-            bearer_token=id_token,
-            accept="text/vnd.vattenfall.charging-history-v2+csv",
-        )
-        if isinstance(csv_text, str):
-            summary = self._summarize_charging_history_csv(csv_text)
-        else:
-            summary = self._summarize_charging_history_json(csv_text)
+        history_path = f"/usage-data-pcu-readmodel/api/pcu-charging-history?{query}"
+        errors: list[str] = []
+
+        try:
+            csv_text = await self._portal_request(
+                "GET",
+                history_path,
+                bearer_token=id_token,
+                accept="text/vnd.vattenfall.charging-history-v2+csv",
+            )
+            if isinstance(csv_text, str):
+                summary = {
+                    **self._summarize_charging_history_csv(csv_text),
+                    "source_format": "csv",
+                }
+            else:
+                summary = {
+                    **self._summarize_charging_history_json(csv_text),
+                    "source_format": "csv_json_fallback",
+                }
+        except InChargeApiError as err:
+            errors.append(f"CSV export failed: {err}")
+            try:
+                payload = await self._portal_request(
+                    "GET",
+                    history_path,
+                    bearer_token=id_token,
+                    accept="application/vnd.vattenfall.daily-charging-summary+json",
+                )
+                summary = {
+                    **self._summarize_charging_history_json(payload),
+                    "source_format": "json",
+                    "source_warnings": errors,
+                }
+            except InChargeApiError as json_err:
+                errors.append(f"JSON summary failed: {json_err}")
+                raise InChargeApiError("; ".join(errors)) from json_err
         return {
             **summary,
             "period_days": period_days,

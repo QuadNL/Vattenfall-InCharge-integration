@@ -147,6 +147,7 @@ class InChargeMyChargeStatusSensor(InChargeMyChargeCoordinatorEntity, SensorEnti
             "token_seconds_left": self.mycharge_data.get("token_seconds_left"),
             "last_checked": self.mycharge_data.get("last_checked"),
             "account_hierarchy_count": account_count,
+            "charging_history_error": self.mycharge_data.get("charging_history_error"),
             "error": self.mycharge_data.get("error"),
         }
 
@@ -198,6 +199,8 @@ class InChargeMyChargeChargingHistorySensor(
             "period_start": self._history.get("period_start"),
             "period_end": self._history.get("period_end"),
             "account_number": self._history.get("account_number"),
+            "source_format": self._history.get("source_format"),
+            "source_warnings": self._history.get("source_warnings"),
             "source_row_count": self._history.get("source_row_count"),
             "source_fieldnames": self._history.get("source_fieldnames"),
             "source_item_count": self._history.get("source_item_count"),
