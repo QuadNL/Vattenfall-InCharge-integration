@@ -198,6 +198,8 @@ class InChargeMyChargeChargingHistorySensor(
             "period_start": self._history.get("period_start"),
             "period_end": self._history.get("period_end"),
             "account_number": self._history.get("account_number"),
+            "source_row_count": self._history.get("source_row_count"),
+            "source_fieldnames": self._history.get("source_fieldnames"),
             "source_item_count": self._history.get("source_item_count"),
             "energy_field_matches": self._history.get("energy_field_matches"),
             "duration_field_matches": self._history.get("duration_field_matches"),

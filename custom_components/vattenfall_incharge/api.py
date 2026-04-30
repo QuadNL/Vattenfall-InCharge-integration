@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import csv
 import hashlib
+import io
 import json
 import logging
 import re
@@ -386,7 +388,7 @@ class InChargeClient:
         return None
 
     @classmethod
-    def _summarize_charging_history(cls, payload: Any) -> dict[str, Any]:
+    def _summarize_charging_history_json(cls, payload: Any) -> dict[str, Any]:
         energy_kwh = 0.0
         duration_hours = 0.0
         energy_matches = 0
@@ -431,6 +433,26 @@ class InChargeClient:
             "source_top_level_keys": top_level_keys,
         }
 
+    @classmethod
+    def _summarize_charging_history_csv(cls, csv_text: str) -> dict[str, Any]:
+        reader = csv.DictReader(io.StringIO(csv_text))
+        total_kwh = 0.0
+        total_seconds = 0.0
+        row_count = 0
+        fieldnames = list(reader.fieldnames or [])
+
+        for row in reader:
+            row_count += 1
+            total_kwh += cls._as_float(row.get("Charged (kWh)")) or 0.0
+            total_seconds += cls._as_float(row.get("Duration in seconds")) or 0.0
+
+        return {
+            "energy_kwh": round(total_kwh, 3),
+            "duration_hours": round(total_seconds / 3600, 3),
+            "source_row_count": row_count,
+            "source_fieldnames": fieldnames,
+        }
+
     async def async_get_mycharge_charging_history_summary(
         self,
         *,
@@ -456,13 +478,16 @@ class InChargeClient:
                 "selectedAccount": account_number,
             }
         )
-        payload = await self._portal_request(
+        csv_text = await self._portal_request(
             "GET",
             f"/usage-data-pcu-readmodel/api/pcu-charging-history?{query}",
             bearer_token=id_token,
-            accept="application/vnd.vattenfall.daily-charging-summary+json",
+            accept="text/vnd.vattenfall.charging-history-v2+csv",
         )
-        summary = self._summarize_charging_history(payload)
+        if isinstance(csv_text, str):
+            summary = self._summarize_charging_history_csv(csv_text)
+        else:
+            summary = self._summarize_charging_history_json(csv_text)
         return {
             **summary,
             "period_days": period_days,
