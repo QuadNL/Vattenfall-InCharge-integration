@@ -10,16 +10,24 @@
         }
       },
       "add_first_station": {
-        "title": "Add first charging station",
-        "description": "Add charging point by name, for example VA5672 or QW7214. You can find the charging point name in the Vattenfall InCharge app. Vattenfall InCharge stations are fully supported. Other networks are partially supported.",
+        "title": "Add first charging point",
+        "description": "Add a charging point by name, for example AB1234 or XY6789. You can find the charging point name in the Vattenfall InCharge app. Leave this empty to skip this step and add one later. Vattenfall InCharge stations are fully supported. Other networks are partially supported.",
         "data": {
           "search_term": "Charging point name"
+        }
+      },
+      "add_first_mycharge_account": {
+        "title": "Add MyCharge account",
+        "description": "Open the MyCharge login URL below in your browser, complete the login and OTP flow, then paste the full final callback URL here. Leave this empty to skip this step and add a MyCharge account later from Configure.\n\n{auth_url}",
+        "data": {
+          "callback_url": "MyCharge callback URL"
         }
       }
     },
     "error": {
       "cannot_connect": "Failed to connect to Vattenfall InCharge",
-      "charging_station_not_found": "Charging station not found"
+      "charging_station_not_found": "Charging station not found",
+      "invalid_auth_state": "The returned login state did not match the generated session"
     },
     "abort": {
       "already_configured": "This Vattenfall InCharge device is already configured"
@@ -38,7 +46,7 @@
       },
       "add_charging_point": {
         "title": "Add charging point",
-        "description": "Add charging point by name, for example VA5672 or QW7214. You can find the charging point name in the Vattenfall InCharge app. Vattenfall InCharge stations are fully supported. Other networks are partially supported.",
+        "description": "Add a charging point by name, for example AB1234 or XY6789. You can find the charging point name in the Vattenfall InCharge app. Vattenfall InCharge stations are fully supported. Other networks are partially supported.",
         "data": {
           "search_term": "Charging point name"
         }

@@ -47,6 +47,30 @@ class VattenfallInChargePublicStationsConfigFlow(
         self._poll_minutes = DEFAULT_POLL_MINUTES
         self._device_id: str | None = None
         self._x_token: str | None = None
+        self._charging_points: list[dict[str, Any]] = []
+        self._mycharge_auth: dict[str, Any] | None = None
+        self._mycharge_state: str | None = None
+        self._mycharge_code_verifier: str | None = None
+        self._mycharge_authorize_url: str = ""
+
+    def _create_config_entry(self) -> config_entries.FlowResult:
+        options: dict[str, Any] = {
+            CONF_CHARGING_POINTS: self._charging_points,
+            CONF_POLL_MINUTES: self._poll_minutes,
+        }
+        if self._mycharge_auth is not None:
+            options[CONF_MYCHARGE] = self._mycharge_auth
+
+        return self.async_create_entry(
+            title=self._name,
+            data={
+                CONF_DEVICE_ID: self._device_id,
+                CONF_X_TOKEN: self._x_token,
+                CONF_APK_SHA1: DEFAULT_APK_SHA1,
+                CONF_APK_CRC: DEFAULT_APK_CRC,
+            },
+            options=options,
+        )
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -96,6 +120,10 @@ class VattenfallInChargePublicStationsConfigFlow(
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            search_term = str(user_input.get(CONF_SEARCH_TERM, "")).strip()
+            if not search_term:
+                return await self.async_step_add_first_mycharge_account()
+
             client = InChargeClient(
                 self.hass,
                 device_id=self._device_id,
@@ -105,7 +133,7 @@ class VattenfallInChargePublicStationsConfigFlow(
             )
             try:
                 found_points = await client.async_collect_station_points(
-                    user_input[CONF_SEARCH_TERM]
+                    search_term
                 )
             except InChargeApiError:
                 _LOGGER.exception("Failed to search Vattenfall InCharge stations")
@@ -114,29 +142,77 @@ class VattenfallInChargePublicStationsConfigFlow(
                 if not found_points:
                     errors["base"] = "charging_station_not_found"
                 else:
-                    return self.async_create_entry(
-                        title=self._name,
-                        data={
-                            CONF_DEVICE_ID: self._device_id,
-                            CONF_X_TOKEN: self._x_token,
-                            CONF_APK_SHA1: DEFAULT_APK_SHA1,
-                            CONF_APK_CRC: DEFAULT_APK_CRC,
-                        },
-                        options={
-                            CONF_CHARGING_POINTS: found_points,
-                            CONF_POLL_MINUTES: self._poll_minutes,
-                        },
-                    )
+                    self._charging_points = found_points
+                    return await self.async_step_add_first_mycharge_account()
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_SEARCH_TERM): str,
+                vol.Optional(CONF_SEARCH_TERM): str,
             }
         )
         return self.async_show_form(
             step_id="add_first_station",
             data_schema=schema,
             errors=errors,
+        )
+
+    async def async_step_add_first_mycharge_account(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        errors: dict[str, str] = {}
+        client = InChargeClient(
+            self.hass,
+            device_id=self._device_id,
+            x_token=self._x_token,
+            apk_sha1=DEFAULT_APK_SHA1,
+            apk_crc=DEFAULT_APK_CRC,
+        )
+
+        if self._mycharge_state is None or self._mycharge_code_verifier is None:
+            self._mycharge_state = secrets.token_hex(16)
+            self._mycharge_code_verifier, code_challenge = (
+                client.create_mycharge_pkce_pair()
+            )
+            self._mycharge_authorize_url = client.build_mycharge_authorize_url(
+                self._mycharge_state,
+                code_challenge,
+            )
+
+        if user_input is not None:
+            callback_url = str(user_input.get(CONF_CALLBACK_URL, "")).strip()
+            if not callback_url:
+                return self._create_config_entry()
+
+            try:
+                code, returned_state = client.extract_mycharge_code_and_state(
+                    callback_url
+                )
+                if returned_state != self._mycharge_state:
+                    errors["base"] = "invalid_auth_state"
+                else:
+                    tokens = await client.async_exchange_mycharge_code(
+                        code, self._mycharge_code_verifier
+                    )
+                    self._mycharge_auth = {
+                        "tokens": tokens,
+                        "profile": client.build_mycharge_profile(tokens),
+                    }
+                    return self._create_config_entry()
+            except InChargeApiError:
+                _LOGGER.exception("Failed to connect MyCharge account")
+                errors["base"] = "cannot_connect"
+
+        return self.async_show_form(
+            step_id="add_first_mycharge_account",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(CONF_CALLBACK_URL): str,
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "auth_url": self._mycharge_authorize_url,
+            },
         )
 
     @staticmethod
