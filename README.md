@@ -68,7 +68,6 @@ Current MyCharge entities:
 - `MyCharge charging energy last 30 days`
 - `MyCharge charging time last 30 days`
 - `MyCharge charging cards`
-- `MyCharge pending card assignments`
 - one `MyCharge card ...` sensor per returned charging card
 
 Future MyCharge features may include costs and report download support.

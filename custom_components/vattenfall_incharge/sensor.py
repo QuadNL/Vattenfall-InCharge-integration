@@ -35,7 +35,6 @@ async def async_setup_entry(
                 InChargeMyChargeEnergySensor(coordinator),
                 InChargeMyChargeDurationSensor(coordinator),
                 InChargeMyChargeCardsSensor(coordinator),
-                InChargeMyChargePendingCardAssignmentsSensor(coordinator),
             ]
         )
         entities.extend(
@@ -294,65 +293,17 @@ class InChargeMyChargeCardsSensor(InChargeMyChargeCoordinatorEntity, SensorEntit
 
     @property
     def extra_state_attributes(self) -> dict:
-        privileges = self._cards_data.get("privileges") or {}
-        features = privileges.get("features") or {}
-        tokens_features = features.get("tokens") or {}
-        whitelist_features = features.get("whitelist") or {}
-        page = self._cards_data.get("page") or {}
-        return {
+        pending_assignments = self._cards_data.get("pending_assignments") or {}
+        cards = self._cards_data.get("cards") or []
+        attributes = {
             "account_number": self._cards_data.get("account_number"),
-            "cards": self._cards_data.get("cards"),
-            "page": page,
-            "can_read_tokens": tokens_features.get("read"),
-            "can_change_token_name": tokens_features.get("changeName"),
-            "can_read_pending_assignments": tokens_features.get(
-                "readPendingAssignments"
-            ),
-            "can_read_whitelist": whitelist_features.get("read"),
-            "privileges": privileges,
+            "pending_assignments": pending_assignments.get("pendingAssignments"),
+            "ongoing_assignments": pending_assignments.get("ongoingAssignments"),
             "error": self.mycharge_data.get("cards_error"),
         }
-
-
-class InChargeMyChargePendingCardAssignmentsSensor(
-    InChargeMyChargeCoordinatorEntity, SensorEntity
-):
-    """Number of pending charging-card assignments."""
-
-    icon = "mdi:card-plus-outline"
-    state_class = SensorStateClass.MEASUREMENT
-
-    @property
-    def _cards_data(self) -> dict:
-        return self.mycharge_data.get("cards") or {}
-
-    @property
-    def _pending_data(self) -> dict:
-        return self._cards_data.get("pending_assignments") or {}
-
-    @property
-    def available(self) -> bool:
-        return bool(self._cards_data)
-
-    @property
-    def unique_id(self) -> str:
-        return f"{self._account_key}_pending_card_assignments"
-
-    @property
-    def name(self) -> str:
-        return "MyCharge pending card assignments"
-
-    @property
-    def native_value(self) -> int | None:
-        return self._pending_data.get("pendingAssignments")
-
-    @property
-    def extra_state_attributes(self) -> dict:
-        return {
-            "account_number": self._cards_data.get("account_number"),
-            "ongoing_assignments": self._pending_data.get("ongoingAssignments"),
-            "error": self.mycharge_data.get("cards_error"),
-        }
+        if cards:
+            attributes["cards"] = cards
+        return attributes
 
 
 class InChargeMyChargeCardSensor(InChargeMyChargeCoordinatorEntity, SensorEntity):

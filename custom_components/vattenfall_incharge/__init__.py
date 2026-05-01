@@ -62,7 +62,6 @@ def _configured_entity_unique_ids(entry: ConfigEntry) -> set[str]:
                 f"{mycharge_key}_charging_energy_30d",
                 f"{mycharge_key}_charging_duration_30d",
                 f"{mycharge_key}_charging_cards",
-                f"{mycharge_key}_pending_card_assignments",
             }
         )
     return unique_ids
