@@ -70,7 +70,6 @@ Current MyCharge entities:
 - `MyCharge charging energy last 30 days`
 - `MyCharge charging time last 30 days`
 - `MyCharge average consumption per session last 7 days`
-- `MyCharge average consumption per session last 30 days`
 - `MyCharge charging costs current month`
 - `MyCharge charging costs last month`
 - `MyCharge charging costs this year`

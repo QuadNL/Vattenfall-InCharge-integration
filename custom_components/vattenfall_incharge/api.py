@@ -843,21 +843,28 @@ class InChargeClient:
         if not account_number:
             raise InChargeApiError("No MyCharge account number available.")
 
+        errors: dict[str, str] = {}
         common_query = urlencode({"period": "30", "selectedAccount": account_number})
-        total_hours = await self._portal_request(
-            "GET",
-            f"/usage-data-pcu-readmodel/api/cards/charging-history/total-hours?{common_query}",
-            bearer_token=id_token,
-        )
+        total_hours = None
+        try:
+            total_hours = await self._portal_request(
+                "GET",
+                f"/usage-data-pcu-readmodel/api/cards/charging-history/total-hours?{common_query}",
+                bearer_token=id_token,
+            )
+        except InChargeApiError as err:
+            errors["total_hours_30d"] = str(err)
         average_consumption: dict[str, Any] = {}
-        for period in (7, 30):
-            query = urlencode({"period": str(period), "selectedAccount": account_number})
-            average_consumption[str(period)] = await self._portal_request(
+        query = urlencode({"period": "7", "selectedAccount": account_number})
+        try:
+            average_consumption["7"] = await self._portal_request(
                 "GET",
                 "/usage-data-pcu-readmodel/api/cards/charging-history/"
                 f"average-consumption-per-session?{query}",
                 bearer_token=id_token,
             )
+        except InChargeApiError as err:
+            errors["average_consumption_per_session_7d"] = str(err)
 
         costs: dict[str, Any] = {}
         for period_key, (start, end) in self._mycharge_cost_periods().items():
@@ -868,19 +875,22 @@ class InChargeClient:
                     "selectedAccount": account_number,
                 }
             )
-            payload = await self._portal_request(
-                "GET",
-                f"/usage-data-pcu-readmodel/api/pcu-charging-history?{query}",
-                bearer_token=id_token,
-                accept="application/vnd.vattenfall.charging-summary-v2+json",
-            )
-            costs[period_key] = self._summarize_charging_costs(
-                payload,
-                account_number=account_number,
-                period_key=period_key,
-                period_start=start,
-                period_end=end,
-            )
+            try:
+                payload = await self._portal_request(
+                    "GET",
+                    f"/usage-data-pcu-readmodel/api/pcu-charging-history?{query}",
+                    bearer_token=id_token,
+                    accept="application/vnd.vattenfall.charging-summary-v2+json",
+                )
+                costs[period_key] = self._summarize_charging_costs(
+                    payload,
+                    account_number=account_number,
+                    period_key=period_key,
+                    period_start=start,
+                    period_end=end,
+                )
+            except InChargeApiError as err:
+                errors[f"costs_{period_key}"] = str(err)
 
         return {
             "account_number": account_number,
@@ -898,6 +908,7 @@ class InChargeClient:
                 for period, value in average_consumption.items()
             },
             "costs": costs,
+            "errors": errors,
         }
 
     async def async_get_mycharge_cards_overview(self) -> dict[str, Any]:
@@ -1019,6 +1030,10 @@ class InChargeClient:
         dashboard_error = None
         try:
             dashboard = await self.async_get_mycharge_dashboard_widgets()
+            if dashboard and dashboard.get("errors"):
+                dashboard_error = "; ".join(
+                    f"{key}: {value}" for key, value in dashboard["errors"].items()
+                )
         except InChargeApiError as err:
             dashboard_error = str(err)
         return {
@@ -1032,6 +1047,7 @@ class InChargeClient:
             "cards_error": cards_error,
             "dashboard": dashboard,
             "dashboard_error": dashboard_error,
+            "dashboard_errors": (dashboard or {}).get("errors"),
             "last_checked": datetime.now(UTC).isoformat(),
             "token_seconds_left": self.mycharge_token_seconds_left(
                 self.mycharge_auth.get("tokens", {})

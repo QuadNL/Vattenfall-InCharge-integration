@@ -35,7 +35,6 @@ async def async_setup_entry(
                 InChargeMyChargeEnergySensor(coordinator),
                 InChargeMyChargeDurationSensor(coordinator),
                 InChargeMyChargeAverageConsumption7dSensor(coordinator),
-                InChargeMyChargeAverageConsumption30dSensor(coordinator),
                 InChargeMyChargeCurrentMonthCostSensor(coordinator),
                 InChargeMyChargeLastMonthCostSensor(coordinator),
                 InChargeMyChargeThisYearCostSensor(coordinator),
@@ -318,11 +317,15 @@ class InChargeMyChargeAverageConsumptionSensor(
 
     @property
     def extra_state_attributes(self) -> dict:
+        dashboard_errors = self.mycharge_data.get("dashboard_errors")
         return {
             "account_number": self._dashboard.get("account_number"),
             "period_days": self._period_days,
             "source": "dashboard_widget",
-            "error": self.mycharge_data.get("dashboard_error"),
+            "error": (dashboard_errors or {}).get(
+                f"average_consumption_per_session_{self._period_days}d"
+            )
+            or self.mycharge_data.get("dashboard_error"),
         }
 
 
@@ -332,14 +335,6 @@ class InChargeMyChargeAverageConsumption7dSensor(
     """Average kWh per MyCharge session for the last seven days."""
 
     _period_days = 7
-
-
-class InChargeMyChargeAverageConsumption30dSensor(
-    InChargeMyChargeAverageConsumptionSensor
-):
-    """Average kWh per MyCharge session for the last 30 days."""
-
-    _period_days = 30
 
 
 class InChargeMyChargeCostSensor(InChargeMyChargeCoordinatorEntity, SensorEntity):
@@ -377,6 +372,7 @@ class InChargeMyChargeCostSensor(InChargeMyChargeCoordinatorEntity, SensorEntity
 
     @property
     def extra_state_attributes(self) -> dict:
+        dashboard_errors = self.mycharge_data.get("dashboard_errors")
         return {
             "account_number": self._costs.get("account_number"),
             "period": self._costs.get("period"),
@@ -388,7 +384,8 @@ class InChargeMyChargeCostSensor(InChargeMyChargeCoordinatorEntity, SensorEntity
             "active_days": self._costs.get("active_days"),
             "source_day_count": self._costs.get("source_day_count"),
             "latest_active_days": self._costs.get("latest_active_days"),
-            "error": self.mycharge_data.get("dashboard_error"),
+            "error": (dashboard_errors or {}).get(f"costs_{self._cost_key}")
+            or self.mycharge_data.get("dashboard_error"),
         }
 
 
