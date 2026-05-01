@@ -479,6 +479,10 @@ class InChargeClient:
     def _format_history_time(value: datetime) -> str:
         return value.strftime("%Y-%m-%dT%H:%M:%S")
 
+    @staticmethod
+    def _format_history_end_time(value: datetime) -> str:
+        return value.strftime("%Y-%m-%dT%H:%M:%S")
+
     def _mycharge_history_period(self, period_days: int) -> tuple[datetime, datetime]:
         now = dt_util.now()
         start = (now - timedelta(days=period_days)).replace(
@@ -494,6 +498,102 @@ class InChargeClient:
             microsecond=0,
         )
         return start, end
+
+    @staticmethod
+    def _start_of_month(value: datetime) -> datetime:
+        return value.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    @classmethod
+    def _previous_month_period(cls, value: datetime) -> tuple[datetime, datetime]:
+        current_month = cls._start_of_month(value)
+        last_month_end = current_month - timedelta(seconds=1)
+        return cls._start_of_month(last_month_end), last_month_end
+
+    @classmethod
+    def _mycharge_cost_periods(cls) -> dict[str, tuple[datetime, datetime]]:
+        now = dt_util.now()
+        current_month_start = cls._start_of_month(now)
+        next_day_start = (now + timedelta(days=1)).replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        last_month_start, last_month_end = cls._previous_month_period(now)
+        year_start = now.replace(
+            month=1,
+            day=1,
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        return {
+            "current_month": (current_month_start, next_day_start - timedelta(seconds=1)),
+            "last_month": (last_month_start, last_month_end),
+            "this_year": (year_start, next_day_start - timedelta(seconds=1)),
+        }
+
+    @classmethod
+    def _summarize_charging_costs(
+        cls,
+        payload: Any,
+        *,
+        account_number: str,
+        period_key: str,
+        period_start: datetime,
+        period_end: datetime,
+    ) -> dict[str, Any]:
+        series: list[dict[str, Any]] = []
+        if isinstance(payload, list):
+            for bucket in payload:
+                if isinstance(bucket, dict) and isinstance(bucket.get("series"), list):
+                    series.extend(
+                        item for item in bucket["series"] if isinstance(item, dict)
+                    )
+                elif isinstance(bucket, dict):
+                    series.append(bucket)
+        elif isinstance(payload, dict) and isinstance(payload.get("series"), list):
+            series.extend(item for item in payload["series"] if isinstance(item, dict))
+
+        total_cost = 0.0
+        total_kwh = 0.0
+        session_count = 0
+        active_days = 0
+        latest_days: list[dict[str, Any]] = []
+        for item in series:
+            cost = cls._as_float(item.get("cost")) or 0.0
+            consumption = cls._as_float(item.get("consumption")) or 0.0
+            sessions = int(cls._as_float(item.get("numberOfSessions")) or 0)
+            total_cost += cost
+            total_kwh += consumption
+            session_count += sessions
+            if cost or consumption or sessions:
+                active_days += 1
+                latest_days.append(
+                    {
+                        "date": "-".join(str(part) for part in item.get("date", []))
+                        if isinstance(item.get("date"), list)
+                        else None,
+                        "cost": cost,
+                        "consumption_kwh": consumption,
+                        "number_of_sessions": sessions,
+                    }
+                )
+
+        return {
+            "account_number": account_number,
+            "period": period_key,
+            "period_start": cls._format_history_time(period_start),
+            "period_end": cls._format_history_end_time(period_end),
+            "cost": round(total_cost, 2),
+            "currency": "EUR",
+            "consumption_kwh": round(total_kwh, 3),
+            "number_of_sessions": session_count,
+            "active_days": active_days,
+            "source_day_count": len(series),
+            "latest_active_days": latest_days[-5:],
+        }
 
     @classmethod
     def _summarize_charging_history_page(
@@ -731,6 +831,75 @@ class InChargeClient:
             "account_number": account_number,
         }
 
+    async def async_get_mycharge_dashboard_widgets(self) -> dict[str, Any]:
+        id_token = str(self.mycharge_auth.get("tokens", {}).get("id_token", ""))
+        if not id_token:
+            raise InChargeApiError("No MyCharge id_token available.")
+
+        profile = self.mycharge_auth.get("profile") or self.build_mycharge_profile(
+            self.mycharge_auth.get("tokens", {})
+        )
+        account_number = profile.get("account_number")
+        if not account_number:
+            raise InChargeApiError("No MyCharge account number available.")
+
+        common_query = urlencode({"period": "30", "selectedAccount": account_number})
+        total_hours = await self._portal_request(
+            "GET",
+            f"/usage-data-pcu-readmodel/api/cards/charging-history/total-hours?{common_query}",
+            bearer_token=id_token,
+        )
+        average_consumption: dict[str, Any] = {}
+        for period in (7, 30):
+            query = urlencode({"period": str(period), "selectedAccount": account_number})
+            average_consumption[str(period)] = await self._portal_request(
+                "GET",
+                "/usage-data-pcu-readmodel/api/cards/charging-history/"
+                f"average-consumption-per-session?{query}",
+                bearer_token=id_token,
+            )
+
+        costs: dict[str, Any] = {}
+        for period_key, (start, end) in self._mycharge_cost_periods().items():
+            query = urlencode(
+                {
+                    "startTime": self._format_history_time(start),
+                    "endTime": self._format_history_end_time(end),
+                    "selectedAccount": account_number,
+                }
+            )
+            payload = await self._portal_request(
+                "GET",
+                f"/usage-data-pcu-readmodel/api/pcu-charging-history?{query}",
+                bearer_token=id_token,
+                accept="application/vnd.vattenfall.charging-summary-v2+json",
+            )
+            costs[period_key] = self._summarize_charging_costs(
+                payload,
+                account_number=account_number,
+                period_key=period_key,
+                period_start=start,
+                period_end=end,
+            )
+
+        return {
+            "account_number": account_number,
+            "total_hours_30d": self._as_float(
+                total_hours.get("totalHoursCharged")
+                if isinstance(total_hours, dict)
+                else total_hours
+            ),
+            "average_consumption_per_session": {
+                period: self._as_float(
+                    value.get("averageConsumptionPerSession")
+                    if isinstance(value, dict)
+                    else value
+                )
+                for period, value in average_consumption.items()
+            },
+            "costs": costs,
+        }
+
     async def async_get_mycharge_cards_overview(self) -> dict[str, Any]:
         id_token = str(self.mycharge_auth.get("tokens", {}).get("id_token", ""))
         if not id_token:
@@ -846,6 +1015,12 @@ class InChargeClient:
             cards = await self.async_get_mycharge_cards_overview()
         except InChargeApiError as err:
             cards_error = str(err)
+        dashboard = None
+        dashboard_error = None
+        try:
+            dashboard = await self.async_get_mycharge_dashboard_widgets()
+        except InChargeApiError as err:
+            dashboard_error = str(err)
         return {
             "connected": True,
             "status": "Connected",
@@ -855,6 +1030,8 @@ class InChargeClient:
             "charging_history_error": charging_history_error,
             "cards": cards,
             "cards_error": cards_error,
+            "dashboard": dashboard,
+            "dashboard_error": dashboard_error,
             "last_checked": datetime.now(UTC).isoformat(),
             "token_seconds_left": self.mycharge_token_seconds_left(
                 self.mycharge_auth.get("tokens", {})

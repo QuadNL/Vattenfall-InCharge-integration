@@ -34,6 +34,11 @@ async def async_setup_entry(
                 InChargeMyChargeAccountSensor(coordinator),
                 InChargeMyChargeEnergySensor(coordinator),
                 InChargeMyChargeDurationSensor(coordinator),
+                InChargeMyChargeAverageConsumption7dSensor(coordinator),
+                InChargeMyChargeAverageConsumption30dSensor(coordinator),
+                InChargeMyChargeCurrentMonthCostSensor(coordinator),
+                InChargeMyChargeLastMonthCostSensor(coordinator),
+                InChargeMyChargeThisYearCostSensor(coordinator),
                 InChargeMyChargeValidatedSessionsSensor(coordinator),
                 InChargeMyChargeInReviewSessionsSensor(coordinator),
                 InChargeMyChargeCancelledSessionsSensor(coordinator),
@@ -163,6 +168,7 @@ class InChargeMyChargeStatusSensor(InChargeMyChargeCoordinatorEntity, SensorEnti
             "account_hierarchy_count": account_count,
             "charging_history_error": self.mycharge_data.get("charging_history_error"),
             "cards_error": self.mycharge_data.get("cards_error"),
+            "dashboard_error": self.mycharge_data.get("dashboard_error"),
             "token_refresh_error": self.mycharge_data.get("token_refresh_error"),
             "reauth_required": self.mycharge_data.get("reauth_required"),
             "error": self.mycharge_data.get("error"),
@@ -263,7 +269,151 @@ class InChargeMyChargeDurationSensor(InChargeMyChargeChargingHistorySensor):
 
     @property
     def native_value(self) -> float | None:
+        dashboard = self.mycharge_data.get("dashboard") or {}
+        if dashboard.get("total_hours_30d") is not None:
+            return dashboard.get("total_hours_30d")
         return self._history.get("duration_hours")
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        attributes = super().extra_state_attributes
+        dashboard = self.mycharge_data.get("dashboard") or {}
+        if dashboard.get("total_hours_30d") is not None:
+            attributes["source"] = "dashboard_total_hours"
+            attributes["error"] = self.mycharge_data.get("dashboard_error")
+        return attributes
+
+
+class InChargeMyChargeAverageConsumptionSensor(
+    InChargeMyChargeCoordinatorEntity, SensorEntity
+):
+    """Average kWh per MyCharge session for a fixed period."""
+
+    icon = "mdi:chart-line"
+    device_class = SensorDeviceClass.ENERGY
+    native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    state_class = SensorStateClass.MEASUREMENT
+    _period_days = 0
+
+    @property
+    def _dashboard(self) -> dict:
+        return self.mycharge_data.get("dashboard") or {}
+
+    @property
+    def available(self) -> bool:
+        return bool(self._dashboard)
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._account_key}_average_consumption_per_session_{self._period_days}d"
+
+    @property
+    def name(self) -> str:
+        return f"MyCharge average consumption per session last {self._period_days} days"
+
+    @property
+    def native_value(self) -> float | None:
+        values = self._dashboard.get("average_consumption_per_session") or {}
+        return values.get(str(self._period_days))
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {
+            "account_number": self._dashboard.get("account_number"),
+            "period_days": self._period_days,
+            "source": "dashboard_widget",
+            "error": self.mycharge_data.get("dashboard_error"),
+        }
+
+
+class InChargeMyChargeAverageConsumption7dSensor(
+    InChargeMyChargeAverageConsumptionSensor
+):
+    """Average kWh per MyCharge session for the last seven days."""
+
+    _period_days = 7
+
+
+class InChargeMyChargeAverageConsumption30dSensor(
+    InChargeMyChargeAverageConsumptionSensor
+):
+    """Average kWh per MyCharge session for the last 30 days."""
+
+    _period_days = 30
+
+
+class InChargeMyChargeCostSensor(InChargeMyChargeCoordinatorEntity, SensorEntity):
+    """MyCharge charging costs for a fixed period."""
+
+    icon = "mdi:cash"
+    device_class = SensorDeviceClass.MONETARY
+    native_unit_of_measurement = "EUR"
+    state_class = SensorStateClass.MEASUREMENT
+    _cost_key = ""
+    _sensor_suffix = ""
+    _sensor_name = ""
+
+    @property
+    def _costs(self) -> dict:
+        return ((self.mycharge_data.get("dashboard") or {}).get("costs") or {}).get(
+            self._cost_key
+        ) or {}
+
+    @property
+    def available(self) -> bool:
+        return bool(self._costs)
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._account_key}_{self._sensor_suffix}"
+
+    @property
+    def name(self) -> str:
+        return self._sensor_name
+
+    @property
+    def native_value(self) -> float | None:
+        return self._costs.get("cost")
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {
+            "account_number": self._costs.get("account_number"),
+            "period": self._costs.get("period"),
+            "period_start": self._costs.get("period_start"),
+            "period_end": self._costs.get("period_end"),
+            "currency": self._costs.get("currency"),
+            "consumption_kwh": self._costs.get("consumption_kwh"),
+            "number_of_sessions": self._costs.get("number_of_sessions"),
+            "active_days": self._costs.get("active_days"),
+            "source_day_count": self._costs.get("source_day_count"),
+            "latest_active_days": self._costs.get("latest_active_days"),
+            "error": self.mycharge_data.get("dashboard_error"),
+        }
+
+
+class InChargeMyChargeCurrentMonthCostSensor(InChargeMyChargeCostSensor):
+    """MyCharge charging costs for the current calendar month."""
+
+    _cost_key = "current_month"
+    _sensor_suffix = "charging_costs_current_month"
+    _sensor_name = "MyCharge charging costs current month"
+
+
+class InChargeMyChargeLastMonthCostSensor(InChargeMyChargeCostSensor):
+    """MyCharge charging costs for the previous calendar month."""
+
+    _cost_key = "last_month"
+    _sensor_suffix = "charging_costs_last_month"
+    _sensor_name = "MyCharge charging costs last month"
+
+
+class InChargeMyChargeThisYearCostSensor(InChargeMyChargeCostSensor):
+    """MyCharge charging costs for the current calendar year."""
+
+    _cost_key = "this_year"
+    _sensor_suffix = "charging_costs_this_year"
+    _sensor_name = "MyCharge charging costs this year"
 
 
 class InChargeMyChargeSessionsSensor(InChargeMyChargeCoordinatorEntity, SensorEntity):
