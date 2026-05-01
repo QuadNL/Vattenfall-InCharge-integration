@@ -163,6 +163,8 @@ class InChargeMyChargeStatusSensor(InChargeMyChargeCoordinatorEntity, SensorEnti
             "account_hierarchy_count": account_count,
             "charging_history_error": self.mycharge_data.get("charging_history_error"),
             "cards_error": self.mycharge_data.get("cards_error"),
+            "token_refresh_error": self.mycharge_data.get("token_refresh_error"),
+            "reauth_required": self.mycharge_data.get("reauth_required"),
             "error": self.mycharge_data.get("error"),
         }
 

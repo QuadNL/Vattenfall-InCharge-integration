@@ -40,7 +40,7 @@
         "menu_options": {
           "add_charging_point": "Add charging point",
           "remove_charging_points": "Remove charging point",
-          "mycharge_account": "Add MyCharge account",
+          "mycharge_account": "Add or update MyCharge account",
           "advanced": "Advanced"
         }
       },
@@ -59,8 +59,8 @@
         }
       },
       "mycharge_account": {
-        "title": "Add MyCharge account",
-        "description": "Open the MyCharge login URL below in your browser, complete the login and OTP flow, then paste the full final callback URL here. If your browser shows an error after login, copy the URL from the address bar or browser error message.\n\n{auth_url}",
+        "title": "Add or update MyCharge account",
+        "description": "Use this to connect MyCharge for the first time, or to refresh an expired or revoked MyCharge session. Open the login URL below in your browser, complete the login and OTP flow, then paste the full final callback URL here. If your browser shows an error after login, copy the URL from the address bar or browser error message.\n\n{auth_url}",
         "data": {
           "callback_url": "MyCharge callback URL"
         }

@@ -793,23 +793,46 @@ class InChargeClient:
         if tokens.get("refresh_token") and self.mycharge_tokens_need_refresh(tokens):
             try:
                 await self.async_refresh_mycharge_tokens()
-            except InChargeApiError:
-                _LOGGER.debug("MyCharge token refresh failed; falling back to stored tokens")
+            except InChargeApiError as err:
+                _LOGGER.warning("MyCharge token refresh failed: %s", err)
+                profile = self.mycharge_auth.get("profile") or self.build_mycharge_profile(
+                    self.mycharge_auth.get("tokens", {})
+                )
+                return {
+                    "connected": False,
+                    "status": "Re-authentication required",
+                    "profile": profile,
+                    "error": (
+                        "MyCharge token refresh failed. Reconnect the account from "
+                        "Configure > Add or update MyCharge account."
+                    ),
+                    "token_refresh_error": str(err),
+                    "reauth_required": True,
+                    "last_checked": datetime.now(UTC).isoformat(),
+                    "token_seconds_left": self.mycharge_token_seconds_left(
+                        self.mycharge_auth.get("tokens", {})
+                    ),
+                }
         profile = self.mycharge_auth.get("profile") or self.build_mycharge_profile(
             self.mycharge_auth.get("tokens", {})
         )
         try:
             hierarchy = await self.async_get_mycharge_account_hierarchy()
         except InChargeApiError as err:
+            token_seconds_left = self.mycharge_token_seconds_left(
+                self.mycharge_auth.get("tokens", {})
+            )
+            reauth_required = token_seconds_left is not None and token_seconds_left <= 0
+            if "401" in str(err):
+                reauth_required = True
             return {
                 "connected": False,
-                "status": "Error",
+                "status": "Re-authentication required" if reauth_required else "Error",
                 "profile": profile,
                 "error": str(err),
+                "reauth_required": reauth_required,
                 "last_checked": datetime.now(UTC).isoformat(),
-                "token_seconds_left": self.mycharge_token_seconds_left(
-                    self.mycharge_auth.get("tokens", {})
-                ),
+                "token_seconds_left": token_seconds_left,
             }
         charging_history = None
         charging_history_error = None
