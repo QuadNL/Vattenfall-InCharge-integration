@@ -23,11 +23,11 @@ from .const import (
     CONF_POLL_MINUTES,
     CONF_SEARCH_TERM,
     CONF_X_TOKEN,
-    DEFAULT_APK_CRC,
-    DEFAULT_APK_SHA1,
     DEFAULT_NAME,
     DEFAULT_POLL_MINUTES,
     DOMAIN,
+    MOBILE_APP_CRC,
+    MOBILE_APP_SHA1,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -66,8 +66,8 @@ class VattenfallInChargePublicStationsConfigFlow(
             data={
                 CONF_DEVICE_ID: self._device_id,
                 CONF_X_TOKEN: self._x_token,
-                CONF_APK_SHA1: DEFAULT_APK_SHA1,
-                CONF_APK_CRC: DEFAULT_APK_CRC,
+                CONF_APK_SHA1: MOBILE_APP_SHA1,
+                CONF_APK_CRC: MOBILE_APP_CRC,
             },
             options=options,
         )
@@ -80,8 +80,8 @@ class VattenfallInChargePublicStationsConfigFlow(
         if user_input is not None:
             client = InChargeClient(
                 self.hass,
-                apk_sha1=DEFAULT_APK_SHA1,
-                apk_crc=DEFAULT_APK_CRC,
+                apk_sha1=MOBILE_APP_SHA1,
+                apk_crc=MOBILE_APP_CRC,
             )
             try:
                 device_id, x_token = await client.async_bootstrap_device()
@@ -128,8 +128,8 @@ class VattenfallInChargePublicStationsConfigFlow(
                 self.hass,
                 device_id=self._device_id,
                 x_token=self._x_token,
-                apk_sha1=DEFAULT_APK_SHA1,
-                apk_crc=DEFAULT_APK_CRC,
+                apk_sha1=MOBILE_APP_SHA1,
+                apk_crc=MOBILE_APP_CRC,
             )
             try:
                 found_points = await client.async_collect_station_points(
@@ -164,8 +164,8 @@ class VattenfallInChargePublicStationsConfigFlow(
             self.hass,
             device_id=self._device_id,
             x_token=self._x_token,
-            apk_sha1=DEFAULT_APK_SHA1,
-            apk_crc=DEFAULT_APK_CRC,
+            apk_sha1=MOBILE_APP_SHA1,
+            apk_crc=MOBILE_APP_CRC,
         )
 
         if self._mycharge_state is None or self._mycharge_code_verifier is None:
@@ -199,7 +199,7 @@ class VattenfallInChargePublicStationsConfigFlow(
                     }
                     return self._create_config_entry()
             except InChargeApiError:
-                _LOGGER.exception("Failed to connect MyCharge account")
+                _LOGGER.exception("Failed to connect My InCharge account")
                 errors["base"] = "cannot_connect"
 
         return self.async_show_form(
@@ -394,7 +394,7 @@ class VattenfallInChargePublicStationsOptionsFlow(config_entries.OptionsFlow):
                         data=self._merged_options(**{CONF_MYCHARGE: mycharge_auth}),
                     )
             except InChargeApiError:
-                _LOGGER.exception("Failed to connect MyCharge account")
+                _LOGGER.exception("Failed to connect My InCharge account")
                 errors["base"] = "cannot_connect"
 
         return self.async_show_form(

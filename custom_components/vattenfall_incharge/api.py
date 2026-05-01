@@ -24,7 +24,6 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     APP_ACCEPT,
-    DEFAULT_PUSH_TOKEN,
     MOBILE_APIM_KEY,
     MOBILE_BASE_URL,
     MYCHARGE_AUTHORIZE_URL,
@@ -297,7 +296,7 @@ class InChargeClient:
     async def async_refresh_mycharge_tokens(self) -> dict[str, Any]:
         refresh_token = self.mycharge_auth.get("tokens", {}).get("refresh_token")
         if not refresh_token:
-            raise InChargeApiError("No MyCharge refresh_token available.")
+            raise InChargeApiError("No My InCharge refresh_token available.")
         payload = {
             "grant_type": "refresh_token",
             "client_id": MYCHARGE_CLIENT_ID,
@@ -331,7 +330,7 @@ class InChargeClient:
     async def async_get_mycharge_account_hierarchy(self) -> Any:
         id_token = str(self.mycharge_auth.get("tokens", {}).get("id_token", ""))
         if not id_token:
-            raise InChargeApiError("No MyCharge id_token available.")
+            raise InChargeApiError("No My InCharge id_token available.")
         return await self._portal_request(
             "GET",
             "/account-management/accounts/hierarchy",
@@ -708,14 +707,14 @@ class InChargeClient:
     ) -> dict[str, Any]:
         id_token = str(self.mycharge_auth.get("tokens", {}).get("id_token", ""))
         if not id_token:
-            raise InChargeApiError("No MyCharge id_token available.")
+            raise InChargeApiError("No My InCharge id_token available.")
 
         profile = self.mycharge_auth.get("profile") or self.build_mycharge_profile(
             self.mycharge_auth.get("tokens", {})
         )
         account_number = profile.get("account_number")
         if not account_number:
-            raise InChargeApiError("No MyCharge account number available.")
+            raise InChargeApiError("No My InCharge account number available.")
 
         start, end = self._mycharge_history_period(period_days)
         history: dict[str, Any] = {}
@@ -771,13 +770,13 @@ class InChargeClient:
         """
         id_token = str(self.mycharge_auth.get("tokens", {}).get("id_token", ""))
         if not id_token:
-            raise InChargeApiError("No MyCharge id_token available.")
+            raise InChargeApiError("No My InCharge id_token available.")
         profile = self.mycharge_auth.get("profile") or self.build_mycharge_profile(
             self.mycharge_auth.get("tokens", {})
         )
         account_number = profile.get("account_number")
         if not account_number:
-            raise InChargeApiError("No MyCharge account number available.")
+            raise InChargeApiError("No My InCharge account number available.")
         start, end = self._mycharge_history_period(period_days)
         query = urlencode(
             {
@@ -834,14 +833,14 @@ class InChargeClient:
     async def async_get_mycharge_dashboard_widgets(self) -> dict[str, Any]:
         id_token = str(self.mycharge_auth.get("tokens", {}).get("id_token", ""))
         if not id_token:
-            raise InChargeApiError("No MyCharge id_token available.")
+            raise InChargeApiError("No My InCharge id_token available.")
 
         profile = self.mycharge_auth.get("profile") or self.build_mycharge_profile(
             self.mycharge_auth.get("tokens", {})
         )
         account_number = profile.get("account_number")
         if not account_number:
-            raise InChargeApiError("No MyCharge account number available.")
+            raise InChargeApiError("No My InCharge account number available.")
 
         errors: dict[str, str] = {}
         common_query = urlencode({"period": "30", "selectedAccount": account_number})
@@ -914,14 +913,14 @@ class InChargeClient:
     async def async_get_mycharge_cards_overview(self) -> dict[str, Any]:
         id_token = str(self.mycharge_auth.get("tokens", {}).get("id_token", ""))
         if not id_token:
-            raise InChargeApiError("No MyCharge id_token available.")
+            raise InChargeApiError("No My InCharge id_token available.")
 
         profile = self.mycharge_auth.get("profile") or self.build_mycharge_profile(
             self.mycharge_auth.get("tokens", {})
         )
         account_number = profile.get("account_number")
         if not account_number:
-            raise InChargeApiError("No MyCharge account number available.")
+            raise InChargeApiError("No My InCharge account number available.")
 
         common_query = urlencode({"selectedAccount": account_number})
         tokens_query = urlencode(
@@ -974,7 +973,7 @@ class InChargeClient:
             try:
                 await self.async_refresh_mycharge_tokens()
             except InChargeApiError as err:
-                _LOGGER.warning("MyCharge token refresh failed: %s", err)
+                _LOGGER.warning("My InCharge token refresh failed: %s", err)
                 profile = self.mycharge_auth.get("profile") or self.build_mycharge_profile(
                     self.mycharge_auth.get("tokens", {})
                 )
@@ -983,8 +982,8 @@ class InChargeClient:
                     "status": "Re-authentication required",
                     "profile": profile,
                     "error": (
-                        "MyCharge token refresh failed. Reconnect the account from "
-                        "Configure > Add or update MyCharge account."
+                        "My InCharge token refresh failed. Reconnect the account from "
+                        "Configure > Add or update My InCharge account."
                     ),
                     "token_refresh_error": str(err),
                     "reauth_required": True,
@@ -1057,7 +1056,7 @@ class InChargeClient:
     async def async_bootstrap_device(
         self,
         *,
-        push_token: str = DEFAULT_PUSH_TOKEN,
+        push_token: str | None = None,
     ) -> tuple[str, str]:
         self.device_id = str(uuid.uuid4())
         payload = {
@@ -1066,7 +1065,7 @@ class InChargeClient:
             "language": "EN",
             "locale": "en_US",
             "osVersion": "37",
-            "pushToken": push_token,
+            "pushToken": push_token or f"home-assistant-{uuid.uuid4()}",
             "userAgent": "android",
             "versionCode": 40505180,
             "versionName": "4.8.7",

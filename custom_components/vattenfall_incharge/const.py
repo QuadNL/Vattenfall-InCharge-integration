@@ -5,12 +5,16 @@ from datetime import timedelta
 DOMAIN = "vattenfall_incharge"
 DEFAULT_NAME = "Vattenfall InCharge"
 DEFAULT_POLL_MINUTES = 15
-DEFAULT_APK_SHA1 = "aa08ea4e0a721e5a5f8d81f1e7c7fbd87f8d3a5f"
-DEFAULT_APK_CRC = 0
-DEFAULT_PUSH_TOKEN = "home-assistant-placeholder-push-token"
+
+# Public mobile app compatibility values. These are not user secrets; the
+# Vattenfall backend expects requests that look like the official mobile app.
+MOBILE_APP_SHA1 = "aa08ea4e0a721e5a5f8d81f1e7c7fbd87f8d3a5f"
+MOBILE_APP_CRC = 0
 APP_ACCEPT = "application/vnd.emobilitymobile.v16+json"
 MOBILE_BASE_URL = "https://businessspecificapimanglobal.azure-api.net/emobility/"
 MOBILE_APIM_KEY = "12c7d772faa84b92a8f13a22d7bd8638"
+
+# Public My InCharge portal OAuth/API compatibility values.
 MYCHARGE_AUTHORIZE_URL = "https://accounts.vattenfall.com/iamng/emob/oauth2/authorize"
 MYCHARGE_TOKEN_URL = "https://accounts.vattenfall.com/iamng/emob/oauth2/token"
 MYCHARGE_CLIENT_ID = "Ac5BFlCwsq4AgqvwaqBYv5uVLpJV"

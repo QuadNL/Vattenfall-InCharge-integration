@@ -60,12 +60,11 @@ class InChargeCoordinatorEntity(CoordinatorEntity):
             name=preferred_name,
             manufacturer="Vattenfall InCharge",
             model="Public Charging Station",
-            suggested_area=address,
         )
 
 
 class InChargeMyChargeCoordinatorEntity(CoordinatorEntity):
-    """Base entity for the MyCharge account device."""
+    """Base entity for the My InCharge account device."""
 
     def __init__(self, coordinator) -> None:
         super().__init__(coordinator)
@@ -90,14 +89,14 @@ class InChargeMyChargeCoordinatorEntity(CoordinatorEntity):
         profile = self.mycharge_profile
         account_number = profile.get("account_number")
         email = profile.get("email")
-        name = "MyCharge Account"
+        name = "My InCharge Account"
         if account_number:
-            name = f"MyCharge {account_number}"
+            name = f"My InCharge {account_number}"
         elif email:
-            name = f"MyCharge {email}"
+            name = f"My InCharge {email}"
         return DeviceInfo(
             identifiers={(DOMAIN, self._account_key)},
             name=name,
             manufacturer="Vattenfall InCharge",
-            model="MyCharge Account",
+            model="My InCharge Account",
         )

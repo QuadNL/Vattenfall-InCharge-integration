@@ -126,7 +126,7 @@ class InChargeStatusSensor(InChargeCoordinatorEntity, SensorEntity):
 
 
 class InChargeMyChargeStatusSensor(InChargeMyChargeCoordinatorEntity, SensorEntity):
-    """Connection status sensor for the MyCharge account."""
+    """Connection status sensor for the My InCharge account."""
 
     icon = "mdi:account-circle"
 
@@ -136,7 +136,7 @@ class InChargeMyChargeStatusSensor(InChargeMyChargeCoordinatorEntity, SensorEnti
 
     @property
     def name(self) -> str:
-        return "MyCharge status"
+        return "My InCharge status"
 
     @property
     def native_value(self) -> str | None:
@@ -175,7 +175,7 @@ class InChargeMyChargeStatusSensor(InChargeMyChargeCoordinatorEntity, SensorEnti
 
 
 class InChargeMyChargeAccountSensor(InChargeMyChargeCoordinatorEntity, SensorEntity):
-    """Primary account identifier sensor for MyCharge."""
+    """Primary account identifier sensor for My InCharge."""
 
     icon = "mdi:card-account-details-outline"
 
@@ -185,7 +185,7 @@ class InChargeMyChargeAccountSensor(InChargeMyChargeCoordinatorEntity, SensorEnt
 
     @property
     def name(self) -> str:
-        return "MyCharge account"
+        return "My InCharge account"
 
     @property
     def native_value(self) -> str | None:
@@ -204,7 +204,7 @@ class InChargeMyChargeAccountSensor(InChargeMyChargeCoordinatorEntity, SensorEnt
 class InChargeMyChargeChargingHistorySensor(
     InChargeMyChargeCoordinatorEntity, SensorEntity
 ):
-    """Base sensor for MyCharge charging-history totals."""
+    """Base sensor for My InCharge charging-history totals."""
 
     @property
     def _history(self) -> dict:
@@ -230,7 +230,7 @@ class InChargeMyChargeChargingHistorySensor(
 
 
 class InChargeMyChargeEnergySensor(InChargeMyChargeChargingHistorySensor):
-    """Total MyCharge charging energy for the recent period."""
+    """Total My InCharge charging energy for the recent period."""
 
     icon = "mdi:lightning-bolt"
     native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
@@ -249,7 +249,7 @@ class InChargeMyChargeEnergySensor(InChargeMyChargeChargingHistorySensor):
 
     @property
     def name(self) -> str:
-        return "MyCharge charging energy last 30 days"
+        return "My InCharge charging energy last 30 days"
 
     @property
     def native_value(self) -> float | None:
@@ -257,7 +257,7 @@ class InChargeMyChargeEnergySensor(InChargeMyChargeChargingHistorySensor):
 
 
 class InChargeMyChargeDurationSensor(InChargeMyChargeChargingHistorySensor):
-    """Total MyCharge charging duration for the recent period."""
+    """Total My InCharge charging duration for the recent period."""
 
     icon = "mdi:timer-outline"
     device_class = SensorDeviceClass.DURATION
@@ -270,7 +270,7 @@ class InChargeMyChargeDurationSensor(InChargeMyChargeChargingHistorySensor):
 
     @property
     def name(self) -> str:
-        return "MyCharge charging time last 30 days"
+        return "My InCharge charging time last 30 days"
 
     @property
     def native_value(self) -> float | None:
@@ -292,7 +292,7 @@ class InChargeMyChargeDurationSensor(InChargeMyChargeChargingHistorySensor):
 class InChargeMyChargeAverageConsumptionSensor(
     InChargeMyChargeCoordinatorEntity, SensorEntity
 ):
-    """Average kWh per MyCharge session for a fixed period."""
+    """Average kWh per My InCharge session for a fixed period."""
 
     icon = "mdi:chart-line"
     native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
@@ -317,7 +317,7 @@ class InChargeMyChargeAverageConsumptionSensor(
 
     @property
     def name(self) -> str:
-        return f"MyCharge average consumption per session last {self._period_days} days"
+        return f"My InCharge average consumption per session last {self._period_days} days"
 
     @property
     def native_value(self) -> float | None:
@@ -341,13 +341,13 @@ class InChargeMyChargeAverageConsumptionSensor(
 class InChargeMyChargeAverageConsumption7dSensor(
     InChargeMyChargeAverageConsumptionSensor
 ):
-    """Average kWh per MyCharge session for the last seven days."""
+    """Average kWh per My InCharge session for the last seven days."""
 
     _period_days = 7
 
 
 class InChargeMyChargeCostSensor(InChargeMyChargeCoordinatorEntity, SensorEntity):
-    """MyCharge charging costs for a fixed period."""
+    """My InCharge charging costs for a fixed period."""
 
     icon = "mdi:cash"
     device_class = SensorDeviceClass.MONETARY
@@ -402,31 +402,31 @@ class InChargeMyChargeCostSensor(InChargeMyChargeCoordinatorEntity, SensorEntity
 
 
 class InChargeMyChargeCurrentMonthCostSensor(InChargeMyChargeCostSensor):
-    """MyCharge charging costs for the current calendar month."""
+    """My InCharge charging costs for the current calendar month."""
 
     _cost_key = "current_month"
     _sensor_suffix = "charging_costs_current_month"
-    _sensor_name = "MyCharge charging costs current month"
+    _sensor_name = "My InCharge charging costs current month"
 
 
 class InChargeMyChargeLastMonthCostSensor(InChargeMyChargeCostSensor):
-    """MyCharge charging costs for the previous calendar month."""
+    """My InCharge charging costs for the previous calendar month."""
 
     _cost_key = "last_month"
     _sensor_suffix = "charging_costs_last_month"
-    _sensor_name = "MyCharge charging costs last month"
+    _sensor_name = "My InCharge charging costs last month"
 
 
 class InChargeMyChargeThisYearCostSensor(InChargeMyChargeCostSensor):
-    """MyCharge charging costs for the current calendar year."""
+    """My InCharge charging costs for the current calendar year."""
 
     _cost_key = "this_year"
     _sensor_suffix = "charging_costs_this_year"
-    _sensor_name = "MyCharge charging costs this year"
+    _sensor_name = "My InCharge charging costs this year"
 
 
 class InChargeMyChargeSessionsSensor(InChargeMyChargeCoordinatorEntity, SensorEntity):
-    """Base sensor for a MyCharge charging-history status bucket."""
+    """Base sensor for a My InCharge charging-history status bucket."""
 
     icon = "mdi:history"
     state_class = SensorStateClass.MEASUREMENT
@@ -473,31 +473,31 @@ class InChargeMyChargeSessionsSensor(InChargeMyChargeCoordinatorEntity, SensorEn
 
 
 class InChargeMyChargeValidatedSessionsSensor(InChargeMyChargeSessionsSensor):
-    """Validated MyCharge sessions for the recent period."""
+    """Validated My InCharge sessions for the recent period."""
 
     _history_key = "validated"
     _sensor_suffix = "validated_sessions_30d"
-    _sensor_name = "MyCharge validated sessions last 30 days"
+    _sensor_name = "My InCharge validated sessions last 30 days"
 
 
 class InChargeMyChargeInReviewSessionsSensor(InChargeMyChargeSessionsSensor):
-    """In-review MyCharge sessions for the recent period."""
+    """In-review My InCharge sessions for the recent period."""
 
     _history_key = "in_review"
     _sensor_suffix = "sessions_in_review_30d"
-    _sensor_name = "MyCharge sessions in review last 30 days"
+    _sensor_name = "My InCharge sessions in review last 30 days"
 
 
 class InChargeMyChargeCancelledSessionsSensor(InChargeMyChargeSessionsSensor):
-    """Cancelled MyCharge sessions for the recent period."""
+    """Cancelled My InCharge sessions for the recent period."""
 
     _history_key = "cancelled"
     _sensor_suffix = "cancelled_sessions_30d"
-    _sensor_name = "MyCharge cancelled sessions last 30 days"
+    _sensor_name = "My InCharge cancelled sessions last 30 days"
 
 
 class InChargeMyChargeCardsSensor(InChargeMyChargeCoordinatorEntity, SensorEntity):
-    """Number of charging cards in the MyCharge account."""
+    """Number of charging cards in the My InCharge account."""
 
     icon = "mdi:card-multiple-outline"
     state_class = SensorStateClass.MEASUREMENT
@@ -516,7 +516,7 @@ class InChargeMyChargeCardsSensor(InChargeMyChargeCoordinatorEntity, SensorEntit
 
     @property
     def name(self) -> str:
-        return "MyCharge charging cards"
+        return "My InCharge charging cards"
 
     @property
     def native_value(self) -> int | None:
@@ -538,7 +538,7 @@ class InChargeMyChargeCardsSensor(InChargeMyChargeCoordinatorEntity, SensorEntit
 
 
 class InChargeMyChargeCardSensor(InChargeMyChargeCoordinatorEntity, SensorEntity):
-    """Sensor for one charging card returned by MyCharge."""
+    """Sensor for one charging card returned by My InCharge."""
 
     icon = "mdi:card-account-details-outline"
 
@@ -615,7 +615,7 @@ class InChargeMyChargeCardSensor(InChargeMyChargeCoordinatorEntity, SensorEntity
 
     @property
     def name(self) -> str:
-        return f"MyCharge card {self._display_card(self._card, str(self._index + 1))}"
+        return f"My InCharge card {self._display_card(self._card, str(self._index + 1))}"
 
     @property
     def native_value(self) -> str | None:

@@ -65,14 +65,14 @@ class InChargeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         },
                     )
             except Exception:  # pragma: no cover - keep station polling alive
-                _LOGGER.exception("Failed to update MyCharge account data")
+                _LOGGER.exception("Failed to update My InCharge account data")
                 mycharge_data = {
                     "connected": False,
                     "status": "Error",
                     "profile": (self.entry.options.get(CONF_MYCHARGE) or {}).get(
                         "profile", {}
                     ),
-                    "error": "Failed to update MyCharge account data",
+                    "error": "Failed to update My InCharge account data",
                 }
 
         return {

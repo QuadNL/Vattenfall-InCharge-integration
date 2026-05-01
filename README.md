@@ -1,18 +1,18 @@
 # Vattenfall InCharge
 
-Home Assistant custom integration for Vattenfall InCharge public charging stations and MyCharge account data.
+Home Assistant custom integration for Vattenfall InCharge public charging stations and My InCharge account data.
 
 ## Features
 
 - Add public charging stations by charging point name, for example `AB1234` or `XY6789`
 - Poll charging point status, connector details, pricing, location and availability
 - Add and remove configured charging stations from the integration settings
-- Connect a MyCharge account with the Vattenfall login and OTP flow
-- Expose basic MyCharge account status and account hierarchy data
-- Expose MyCharge charging energy and charging time totals for the last 30 days
-- Expose MyCharge dashboard widgets such as average kWh per session and charging costs
-- Expose MyCharge charging-history counts for validated, in-review and cancelled sessions
-- Expose MyCharge charging-card counts, pending assignments and per-card sensors when cards are present
+- Connect a My InCharge account with the Vattenfall login and OTP flow
+- Expose basic My InCharge account status and account hierarchy data
+- Expose My InCharge charging energy and charging time totals for the last 30 days
+- Expose My InCharge dashboard widgets such as average kWh per session and charging costs
+- Expose My InCharge charging-history counts for validated, in-review and cancelled sessions
+- Expose My InCharge charging-card counts, pending assignments and per-card sensors when cards are present
 
 Vattenfall InCharge stations are fully supported. Other charging networks exposed through the same app API are best effort and may return less consistent names or grouping.
 
@@ -52,34 +52,34 @@ Open the integration settings to manage:
 
 - `Add charging point`
 - `Remove charging point`
-- `Add or update MyCharge account`
+- `Add or update My InCharge account`
 - `Advanced`
 
 The polling interval is configured under `Advanced` and applies to the integration.
 
-## MyCharge account
+## My InCharge account
 
-The MyCharge account flow uses the browser-based Vattenfall login and OTP flow.
+The My InCharge account flow uses the browser-based Vattenfall login and OTP flow.
 
 After login, Home Assistant stores the returned tokens in the config entry storage. The integration refreshes tokens when they are close to expiry and writes refreshed tokens back to Home Assistant storage.
 
-Current MyCharge entities:
+Current My InCharge entities:
 
-- `MyCharge status`
-- `MyCharge account`
-- `MyCharge charging energy last 30 days`
-- `MyCharge charging time last 30 days`
-- `MyCharge average consumption per session last 7 days`
-- `MyCharge charging costs current month`
-- `MyCharge charging costs last month`
-- `MyCharge charging costs this year`
-- `MyCharge validated sessions last 30 days`
-- `MyCharge sessions in review last 30 days`
-- `MyCharge cancelled sessions last 30 days`
-- `MyCharge charging cards`
-- one `MyCharge card ...` sensor per returned charging card
+- `My InCharge status`
+- `My InCharge account`
+- `My InCharge charging energy last 30 days`
+- `My InCharge charging time last 30 days`
+- `My InCharge average consumption per session last 7 days`
+- `My InCharge charging costs current month`
+- `My InCharge charging costs last month`
+- `My InCharge charging costs this year`
+- `My InCharge validated sessions last 30 days`
+- `My InCharge sessions in review last 30 days`
+- `My InCharge cancelled sessions last 30 days`
+- `My InCharge charging cards`
+- one `My InCharge card ...` sensor per returned charging card
 
-Future MyCharge features may include report download support.
+Future My InCharge features may include report download support.
 
 ## Entities
 
@@ -108,4 +108,4 @@ The visible integration name is:
 Vattenfall InCharge
 ```
 
-This domain is intentionally broad enough for both public charging stations and MyCharge account features.
+This domain is intentionally broad enough for both public charging stations and My InCharge account features.
