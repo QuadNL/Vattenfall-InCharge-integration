@@ -523,6 +523,63 @@ class InChargeClient:
             "account_number": account_number,
         }
 
+    async def async_get_mycharge_cards_overview(self) -> dict[str, Any]:
+        id_token = str(self.mycharge_auth.get("tokens", {}).get("id_token", ""))
+        if not id_token:
+            raise InChargeApiError("No MyCharge id_token available.")
+
+        profile = self.mycharge_auth.get("profile") or self.build_mycharge_profile(
+            self.mycharge_auth.get("tokens", {})
+        )
+        account_number = profile.get("account_number")
+        if not account_number:
+            raise InChargeApiError("No MyCharge account number available.")
+
+        common_query = urlencode({"selectedAccount": account_number})
+        tokens_query = urlencode(
+            {
+                "page": "0",
+                "size": "100",
+                "selectedAccount": account_number,
+            }
+        )
+        privileges = await self._portal_request(
+            "GET",
+            f"/emsp-tokens/pub/privileges?{common_query}",
+            bearer_token=id_token,
+        )
+        pending_assignments = await self._portal_request(
+            "GET",
+            f"/emsp-tokens/pub/pendingAssignments?{common_query}",
+            bearer_token=id_token,
+        )
+        tokens = await self._portal_request(
+            "GET",
+            f"/emsp-tokens/pub/tokens?{tokens_query}",
+            bearer_token=id_token,
+        )
+
+        token_items = []
+        if isinstance(tokens, dict) and isinstance(tokens.get("content"), list):
+            token_items = tokens["content"]
+
+        return {
+            "account_number": account_number,
+            "card_count": len(token_items),
+            "cards": token_items,
+            "page": {
+                "number": tokens.get("number"),
+                "size": tokens.get("size"),
+                "total_elements": tokens.get("totalElements"),
+                "total_pages": tokens.get("totalPages"),
+                "empty": tokens.get("empty"),
+            }
+            if isinstance(tokens, dict)
+            else None,
+            "pending_assignments": pending_assignments,
+            "privileges": privileges,
+        }
+
     async def async_get_mycharge_overview(self) -> dict[str, Any]:
         tokens = self.mycharge_auth.get("tokens", {})
         if tokens.get("refresh_token") and self.mycharge_tokens_need_refresh(tokens):
@@ -552,6 +609,12 @@ class InChargeClient:
             charging_history = await self.async_get_mycharge_charging_history_summary()
         except InChargeApiError as err:
             charging_history_error = str(err)
+        cards = None
+        cards_error = None
+        try:
+            cards = await self.async_get_mycharge_cards_overview()
+        except InChargeApiError as err:
+            cards_error = str(err)
         return {
             "connected": True,
             "status": "Connected",
@@ -559,6 +622,8 @@ class InChargeClient:
             "account_hierarchy": hierarchy,
             "charging_history": charging_history,
             "charging_history_error": charging_history_error,
+            "cards": cards,
+            "cards_error": cards_error,
             "last_checked": datetime.now(UTC).isoformat(),
             "token_seconds_left": self.mycharge_token_seconds_left(
                 self.mycharge_auth.get("tokens", {})

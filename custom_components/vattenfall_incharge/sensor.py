@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.const import UnitOfEnergy, UnitOfTime
 from homeassistant.config_entries import ConfigEntry
@@ -23,13 +26,22 @@ async def async_setup_entry(
         InChargeStatusSensor(coordinator, point) for point in charging_points
     ]
     if entry.options.get(CONF_MYCHARGE):
+        mycharge_data = coordinator.data.get("mycharge") or {}
+        cards = ((mycharge_data.get("cards") or {}).get("cards")) or []
         entities.extend(
             [
                 InChargeMyChargeStatusSensor(coordinator),
                 InChargeMyChargeAccountSensor(coordinator),
                 InChargeMyChargeEnergySensor(coordinator),
                 InChargeMyChargeDurationSensor(coordinator),
+                InChargeMyChargeCardsSensor(coordinator),
+                InChargeMyChargePendingCardAssignmentsSensor(coordinator),
             ]
+        )
+        entities.extend(
+            InChargeMyChargeCardSensor(coordinator, card, index)
+            for index, card in enumerate(cards)
+            if isinstance(card, dict)
         )
     async_add_entities(entities)
 
@@ -148,6 +160,7 @@ class InChargeMyChargeStatusSensor(InChargeMyChargeCoordinatorEntity, SensorEnti
             "last_checked": self.mycharge_data.get("last_checked"),
             "account_hierarchy_count": account_count,
             "charging_history_error": self.mycharge_data.get("charging_history_error"),
+            "cards_error": self.mycharge_data.get("cards_error"),
             "error": self.mycharge_data.get("error"),
         }
 
@@ -251,3 +264,196 @@ class InChargeMyChargeDurationSensor(InChargeMyChargeChargingHistorySensor):
     @property
     def native_value(self) -> float | None:
         return self._history.get("duration_hours")
+
+
+class InChargeMyChargeCardsSensor(InChargeMyChargeCoordinatorEntity, SensorEntity):
+    """Number of charging cards in the MyCharge account."""
+
+    icon = "mdi:card-multiple-outline"
+    state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def _cards_data(self) -> dict:
+        return self.mycharge_data.get("cards") or {}
+
+    @property
+    def available(self) -> bool:
+        return bool(self._cards_data)
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._account_key}_charging_cards"
+
+    @property
+    def name(self) -> str:
+        return "MyCharge charging cards"
+
+    @property
+    def native_value(self) -> int | None:
+        return self._cards_data.get("card_count")
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        privileges = self._cards_data.get("privileges") or {}
+        features = privileges.get("features") or {}
+        tokens_features = features.get("tokens") or {}
+        whitelist_features = features.get("whitelist") or {}
+        page = self._cards_data.get("page") or {}
+        return {
+            "account_number": self._cards_data.get("account_number"),
+            "cards": self._cards_data.get("cards"),
+            "page": page,
+            "can_read_tokens": tokens_features.get("read"),
+            "can_change_token_name": tokens_features.get("changeName"),
+            "can_read_pending_assignments": tokens_features.get(
+                "readPendingAssignments"
+            ),
+            "can_read_whitelist": whitelist_features.get("read"),
+            "privileges": privileges,
+            "error": self.mycharge_data.get("cards_error"),
+        }
+
+
+class InChargeMyChargePendingCardAssignmentsSensor(
+    InChargeMyChargeCoordinatorEntity, SensorEntity
+):
+    """Number of pending charging-card assignments."""
+
+    icon = "mdi:card-plus-outline"
+    state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def _cards_data(self) -> dict:
+        return self.mycharge_data.get("cards") or {}
+
+    @property
+    def _pending_data(self) -> dict:
+        return self._cards_data.get("pending_assignments") or {}
+
+    @property
+    def available(self) -> bool:
+        return bool(self._cards_data)
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._account_key}_pending_card_assignments"
+
+    @property
+    def name(self) -> str:
+        return "MyCharge pending card assignments"
+
+    @property
+    def native_value(self) -> int | None:
+        return self._pending_data.get("pendingAssignments")
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {
+            "account_number": self._cards_data.get("account_number"),
+            "ongoing_assignments": self._pending_data.get("ongoingAssignments"),
+            "error": self.mycharge_data.get("cards_error"),
+        }
+
+
+class InChargeMyChargeCardSensor(InChargeMyChargeCoordinatorEntity, SensorEntity):
+    """Sensor for one charging card returned by MyCharge."""
+
+    icon = "mdi:card-account-details-outline"
+
+    def __init__(self, coordinator, card: dict, index: int) -> None:
+        super().__init__(coordinator)
+        self._initial_card = card
+        self._index = index
+        self._card_key = self._build_card_key(card, index)
+
+    @staticmethod
+    def _card_value(card: dict, *keys: str):
+        lower_lookup = {str(key).casefold(): value for key, value in card.items()}
+        for key in keys:
+            value = card.get(key)
+            if value:
+                return value
+            value = lower_lookup.get(key.casefold())
+            if value:
+                return value
+        return None
+
+    @staticmethod
+    def _build_card_key(card: dict, index: int) -> str:
+        value = InChargeMyChargeCardSensor._card_value(
+            card,
+            "id",
+            "tokenId",
+            "uid",
+            "UID",
+            "tokenUid",
+            "cardId",
+            "cardNumber",
+            "Number",
+            "visualNumber",
+            "printedNumber",
+        )
+        if value:
+            return str(value).casefold().replace(" ", "_")
+        raw = json.dumps(card, sort_keys=True, default=str)
+        return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12] or str(index)
+
+    @staticmethod
+    def _display_card(card: dict, fallback: str) -> str:
+        value = InChargeMyChargeCardSensor._card_value(
+            card,
+            "customName",
+            "name",
+            "Name",
+            "displayName",
+            "cardNumber",
+            "Number",
+            "visualNumber",
+            "printedNumber",
+            "tokenId",
+            "uid",
+            "UID",
+            "id",
+        )
+        return str(value) if value else fallback
+
+    @property
+    def _cards(self) -> list:
+        return ((self.mycharge_data.get("cards") or {}).get("cards")) or []
+
+    @property
+    def _card(self) -> dict:
+        if self._index < len(self._cards) and isinstance(self._cards[self._index], dict):
+            return self._cards[self._index]
+        return self._initial_card
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._account_key}_charging_card_{self._card_key}"
+
+    @property
+    def name(self) -> str:
+        return f"MyCharge card {self._display_card(self._card, str(self._index + 1))}"
+
+    @property
+    def native_value(self) -> str | None:
+        card = self._card
+        value = self._card_value(card, "status", "state", "State", "tokenStatus", "cardStatus")
+        if value:
+            return str(value).replace("_", " ").title()
+        return "Available"
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        card = self._card
+        return {
+            "uid": self._card_value(card, "uid", "UID", "tokenUid"),
+            "number": self._card_value(card, "number", "Number", "cardNumber"),
+            "card_name": self._card_value(card, "name", "Name", "customName"),
+            "activation": self._card_value(card, "activation", "Activation"),
+            "state": self._card_value(card, "state", "State"),
+            "valid_from": self._card_value(card, "validFrom", "Valid From"),
+            "valid_to": self._card_value(card, "validTo", "Valid To"),
+            "card": card,
+            "source_index": self._index,
+        }

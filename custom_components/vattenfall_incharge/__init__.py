@@ -61,6 +61,8 @@ def _configured_entity_unique_ids(entry: ConfigEntry) -> set[str]:
                 f"{mycharge_key}_account",
                 f"{mycharge_key}_charging_energy_30d",
                 f"{mycharge_key}_charging_duration_30d",
+                f"{mycharge_key}_charging_cards",
+                f"{mycharge_key}_pending_card_assignments",
             }
         )
     return unique_ids
@@ -89,6 +91,9 @@ async def async_cleanup_orphan_registrations(
             continue
         if entity_entry.unique_id in valid_unique_ids:
             continue
+        if mycharge_key := _mycharge_account_key(entry):
+            if entity_entry.unique_id.startswith(f"{mycharge_key}_charging_card_"):
+                continue
         _LOGGER.info("Removing stale entity registry entry %s", entity_entry.entity_id)
         entity_registry.async_remove(entity_entry.entity_id)
 
