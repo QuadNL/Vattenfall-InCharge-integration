@@ -235,7 +235,6 @@ class InChargeMyChargeEnergySensor(InChargeMyChargeChargingHistorySensor):
     icon = "mdi:lightning-bolt"
     device_class = SensorDeviceClass.ENERGY
     native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-    state_class = SensorStateClass.MEASUREMENT
 
     @property
     def unique_id(self) -> str:
@@ -289,7 +288,6 @@ class InChargeMyChargeAverageConsumptionSensor(
     """Average kWh per MyCharge session for a fixed period."""
 
     icon = "mdi:chart-line"
-    device_class = SensorDeviceClass.ENERGY
     native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     state_class = SensorStateClass.MEASUREMENT
     _period_days = 0
@@ -343,7 +341,6 @@ class InChargeMyChargeCostSensor(InChargeMyChargeCoordinatorEntity, SensorEntity
     icon = "mdi:cash"
     device_class = SensorDeviceClass.MONETARY
     native_unit_of_measurement = "EUR"
-    state_class = SensorStateClass.MEASUREMENT
     _cost_key = ""
     _sensor_suffix = ""
     _sensor_name = ""
