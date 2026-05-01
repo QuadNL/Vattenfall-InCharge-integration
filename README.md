@@ -10,6 +10,7 @@ Home Assistant custom integration for Vattenfall InCharge public charging statio
 - Connect a MyCharge account with the Vattenfall login and OTP flow
 - Expose basic MyCharge account status and account hierarchy data
 - Expose MyCharge charging energy and charging time totals for the last 30 days
+- Expose MyCharge charging-history counts for validated, in-review and cancelled sessions
 - Expose MyCharge charging-card counts, pending assignments and per-card sensors when cards are present
 
 Vattenfall InCharge stations are fully supported. Other charging networks exposed through the same app API are best effort and may return less consistent names or grouping.
@@ -67,6 +68,9 @@ Current MyCharge entities:
 - `MyCharge account`
 - `MyCharge charging energy last 30 days`
 - `MyCharge charging time last 30 days`
+- `MyCharge validated sessions last 30 days`
+- `MyCharge sessions in review last 30 days`
+- `MyCharge cancelled sessions last 30 days`
 - `MyCharge charging cards`
 - one `MyCharge card ...` sensor per returned charging card
 

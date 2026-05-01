@@ -20,6 +20,7 @@ from urllib.parse import urlencode
 from aiohttp import ClientError
 
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.util import dt as dt_util
 
 from .const import (
     APP_ACCEPT,
@@ -38,6 +39,11 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+MYCHARGE_HISTORY_STATUSES = {
+    "validated": "ACCEPTED,RATED,VALIDATED",
+    "in_review": "REJECTED,WITH_ISSUES",
+    "cancelled": "CANCELLED",
+}
 
 
 class InChargeApiError(Exception):
@@ -453,6 +459,148 @@ class InChargeClient:
             "source_fieldnames": fieldnames,
         }
 
+    @staticmethod
+    def _first_value(item: dict[str, Any], *keys: str) -> Any:
+        lower_lookup = {str(key).casefold(): value for key, value in item.items()}
+        for key in keys:
+            value = item.get(key)
+            if value not in (None, ""):
+                return value
+            value = lower_lookup.get(key.casefold())
+            if value not in (None, ""):
+                return value
+        return None
+
+    @classmethod
+    def _first_float(cls, item: dict[str, Any], *keys: str) -> float | None:
+        return cls._as_float(cls._first_value(item, *keys))
+
+    @staticmethod
+    def _format_history_time(value: datetime) -> str:
+        return value.strftime("%Y-%m-%dT%H:%M:%S")
+
+    def _mycharge_history_period(self, period_days: int) -> tuple[datetime, datetime]:
+        now = dt_util.now()
+        start = (now - timedelta(days=period_days)).replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        end = (now + timedelta(days=1)).replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        return start, end
+
+    @classmethod
+    def _summarize_charging_history_page(
+        cls,
+        payload: Any,
+        *,
+        status_key: str,
+        period_days: int,
+        period_start: datetime,
+        period_end: datetime,
+        account_number: str,
+    ) -> dict[str, Any]:
+        content = []
+        if isinstance(payload, dict) and isinstance(payload.get("content"), list):
+            content = payload["content"]
+
+        total_kwh = 0.0
+        total_seconds = 0.0
+        total_cost_incl_vat = 0.0
+        cost_matches = 0
+        latest_sessions: list[dict[str, Any]] = []
+
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            charged_kwh = cls._first_float(
+                item,
+                "chargedKwh",
+                "chargedKWh",
+                "chargedInKwh",
+                "chargedInKWh",
+                "charged",
+                "energyKwh",
+                "Geladen (kWh)",
+                "Charged (kWh)",
+            )
+            duration_seconds = cls._first_float(
+                item,
+                "durationInSeconds",
+                "durationSeconds",
+                "Duur in seconden",
+                "Duration in seconds",
+            )
+            cost_incl_vat = cls._first_float(
+                item,
+                "totalCostInclVat",
+                "totalCostInclVAT",
+                "totalCostIncludingVat",
+                "invoiceCostInclVat",
+                "Totale kosten (incl. Btw)",
+                "Total Cost (Incl. VAT)",
+            )
+            if charged_kwh is not None:
+                total_kwh += charged_kwh
+            if duration_seconds is not None:
+                total_seconds += duration_seconds
+            if cost_incl_vat is not None:
+                total_cost_incl_vat += cost_incl_vat
+                cost_matches += 1
+
+            if len(latest_sessions) < 5:
+                latest_sessions.append(
+                    {
+                        "card": cls._first_value(item, "cardNumber", "Laadpas"),
+                        "custom_name": cls._first_value(
+                            item, "customName", "Aangepaste naam"
+                        ),
+                        "charging_station": cls._first_value(
+                            item, "chargingStation", "Laadpaal"
+                        ),
+                        "address": cls._first_value(item, "address", "adres"),
+                        "city": cls._first_value(item, "city", "stad"),
+                        "start_time": cls._first_value(item, "startTime", "Starttijd"),
+                        "end_time": cls._first_value(item, "endTime", "Eindtijd"),
+                        "duration_seconds": duration_seconds,
+                        "charged_kwh": charged_kwh,
+                        "total_cost_incl_vat": cost_incl_vat,
+                        "currency": cls._first_value(item, "currency", "Currency"),
+                    }
+                )
+
+        if isinstance(payload, dict):
+            count = payload.get("totalElements")
+            if count is None:
+                count = payload.get("numberOfElements")
+        else:
+            count = None
+        if count is None:
+            count = len(content)
+
+        return {
+            "account_number": account_number,
+            "status_key": status_key,
+            "period_days": period_days,
+            "period_start": cls._format_history_time(period_start),
+            "period_end": cls._format_history_time(period_end),
+            "session_count": count,
+            "page_count": len(content),
+            "total_kwh": round(total_kwh, 3),
+            "total_duration_hours": round(total_seconds / 3600, 3),
+            "total_duration_seconds": round(total_seconds),
+            "total_cost_incl_vat": round(total_cost_incl_vat, 2)
+            if cost_matches
+            else None,
+            "latest_sessions": latest_sessions,
+        }
+
     async def async_get_mycharge_charging_history_summary(
         self,
         *,
@@ -469,12 +617,72 @@ class InChargeClient:
         if not account_number:
             raise InChargeApiError("No MyCharge account number available.")
 
-        end = datetime.now(UTC)
-        start = end - timedelta(days=period_days)
+        start, end = self._mycharge_history_period(period_days)
+        history: dict[str, Any] = {}
+        for status_key, status_value in MYCHARGE_HISTORY_STATUSES.items():
+            query = urlencode(
+                {
+                    "startTime": self._format_history_time(start),
+                    "endTime": self._format_history_time(end),
+                    "status": status_value,
+                    "page": "0",
+                    "size": "30",
+                    "sort": "cardNumber,endTime",
+                    "selectedAccount": account_number,
+                }
+            )
+            payload = await self._portal_request(
+                "GET",
+                f"/usage-data-pcu-readmodel/api/pcu-charging-history?{query}",
+                bearer_token=id_token,
+                accept="application/vnd.vattenfall.charging-history+json",
+            )
+            history[status_key] = self._summarize_charging_history_page(
+                payload,
+                status_key=status_key,
+                period_days=period_days,
+                period_start=start,
+                period_end=end,
+                account_number=account_number,
+            )
+
+        validated = history["validated"]
+        return {
+            "energy_kwh": validated["total_kwh"],
+            "duration_hours": validated["total_duration_hours"],
+            "period_days": period_days,
+            "period_start": self._format_history_time(start),
+            "period_end": self._format_history_time(end),
+            "account_number": account_number,
+            "validated": validated,
+            "in_review": history["in_review"],
+            "cancelled": history["cancelled"],
+        }
+
+    async def async_get_mycharge_charging_history_export_summary(
+        self,
+        *,
+        period_days: int = 30,
+    ) -> dict[str, Any]:
+        """Fetch charging history CSV export totals.
+
+        Kept for later report download work; the dashboard sensors use the JSON
+        history endpoint because it is what the portal uses for screen data.
+        """
+        id_token = str(self.mycharge_auth.get("tokens", {}).get("id_token", ""))
+        if not id_token:
+            raise InChargeApiError("No MyCharge id_token available.")
+        profile = self.mycharge_auth.get("profile") or self.build_mycharge_profile(
+            self.mycharge_auth.get("tokens", {})
+        )
+        account_number = profile.get("account_number")
+        if not account_number:
+            raise InChargeApiError("No MyCharge account number available.")
+        start, end = self._mycharge_history_period(period_days)
         query = urlencode(
             {
-                "startTime": start.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
-                "endTime": end.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+                "startTime": self._format_history_time(start),
+                "endTime": self._format_history_time(end),
                 "selectedAccount": account_number,
             }
         )
@@ -518,8 +726,8 @@ class InChargeClient:
         return {
             **summary,
             "period_days": period_days,
-            "period_start": start.isoformat(timespec="seconds").replace("+00:00", "Z"),
-            "period_end": end.isoformat(timespec="seconds").replace("+00:00", "Z"),
+            "period_start": self._format_history_time(start),
+            "period_end": self._format_history_time(end),
             "account_number": account_number,
         }
 

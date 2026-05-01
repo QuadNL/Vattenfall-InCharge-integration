@@ -34,6 +34,9 @@ async def async_setup_entry(
                 InChargeMyChargeAccountSensor(coordinator),
                 InChargeMyChargeEnergySensor(coordinator),
                 InChargeMyChargeDurationSensor(coordinator),
+                InChargeMyChargeValidatedSessionsSensor(coordinator),
+                InChargeMyChargeInReviewSessionsSensor(coordinator),
+                InChargeMyChargeCancelledSessionsSensor(coordinator),
                 InChargeMyChargeCardsSensor(coordinator),
             ]
         )
@@ -211,14 +214,10 @@ class InChargeMyChargeChargingHistorySensor(
             "period_start": self._history.get("period_start"),
             "period_end": self._history.get("period_end"),
             "account_number": self._history.get("account_number"),
-            "source_format": self._history.get("source_format"),
-            "source_warnings": self._history.get("source_warnings"),
-            "source_row_count": self._history.get("source_row_count"),
-            "source_fieldnames": self._history.get("source_fieldnames"),
-            "source_item_count": self._history.get("source_item_count"),
-            "energy_field_matches": self._history.get("energy_field_matches"),
-            "duration_field_matches": self._history.get("duration_field_matches"),
-            "source_top_level_keys": self._history.get("source_top_level_keys"),
+            "source": "validated_sessions",
+            "validated_session_count": (self._history.get("validated") or {}).get(
+                "session_count"
+            ),
             "error": self.mycharge_data.get("charging_history_error"),
         }
 
@@ -263,6 +262,77 @@ class InChargeMyChargeDurationSensor(InChargeMyChargeChargingHistorySensor):
     @property
     def native_value(self) -> float | None:
         return self._history.get("duration_hours")
+
+
+class InChargeMyChargeSessionsSensor(InChargeMyChargeCoordinatorEntity, SensorEntity):
+    """Base sensor for a MyCharge charging-history status bucket."""
+
+    icon = "mdi:history"
+    state_class = SensorStateClass.MEASUREMENT
+    _history_key = ""
+    _sensor_suffix = ""
+    _sensor_name = ""
+
+    @property
+    def _history(self) -> dict:
+        return (self.mycharge_data.get("charging_history") or {}).get(
+            self._history_key
+        ) or {}
+
+    @property
+    def available(self) -> bool:
+        return bool(self._history)
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._account_key}_{self._sensor_suffix}"
+
+    @property
+    def name(self) -> str:
+        return self._sensor_name
+
+    @property
+    def native_value(self) -> int | None:
+        return self._history.get("session_count")
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {
+            "account_number": self._history.get("account_number"),
+            "period_days": self._history.get("period_days"),
+            "period_start": self._history.get("period_start"),
+            "period_end": self._history.get("period_end"),
+            "total_kwh": self._history.get("total_kwh"),
+            "total_duration_hours": self._history.get("total_duration_hours"),
+            "total_duration_seconds": self._history.get("total_duration_seconds"),
+            "total_cost_incl_vat": self._history.get("total_cost_incl_vat"),
+            "latest_sessions": self._history.get("latest_sessions"),
+            "error": self.mycharge_data.get("charging_history_error"),
+        }
+
+
+class InChargeMyChargeValidatedSessionsSensor(InChargeMyChargeSessionsSensor):
+    """Validated MyCharge sessions for the recent period."""
+
+    _history_key = "validated"
+    _sensor_suffix = "validated_sessions_30d"
+    _sensor_name = "MyCharge validated sessions last 30 days"
+
+
+class InChargeMyChargeInReviewSessionsSensor(InChargeMyChargeSessionsSensor):
+    """In-review MyCharge sessions for the recent period."""
+
+    _history_key = "in_review"
+    _sensor_suffix = "sessions_in_review_30d"
+    _sensor_name = "MyCharge sessions in review last 30 days"
+
+
+class InChargeMyChargeCancelledSessionsSensor(InChargeMyChargeSessionsSensor):
+    """Cancelled MyCharge sessions for the recent period."""
+
+    _history_key = "cancelled"
+    _sensor_suffix = "cancelled_sessions_30d"
+    _sensor_name = "MyCharge cancelled sessions last 30 days"
 
 
 class InChargeMyChargeCardsSensor(InChargeMyChargeCoordinatorEntity, SensorEntity):
