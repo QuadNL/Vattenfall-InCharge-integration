@@ -10,6 +10,7 @@ from homeassistant.const import UnitOfEnergy, UnitOfTime
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import slugify
 
 from .const import CONF_CHARGING_POINTS, CONF_MYCHARGE, DATA_COORDINATOR, DOMAIN
 from .entity import InChargeCoordinatorEntity, InChargeMyChargeCoordinatorEntity
@@ -55,7 +56,33 @@ async def async_setup_entry(
 class InChargeStatusSensor(InChargeCoordinatorEntity, SensorEntity):
     """Main status sensor for an InCharge charging point."""
 
+    _attr_has_entity_name = False
     icon = "mdi:ev-station"
+
+    def __init__(self, coordinator, point_metadata: dict) -> None:
+        super().__init__(coordinator, point_metadata)
+        self.entity_id = f"sensor.{self._object_id}"
+
+    @property
+    def _station_name(self) -> str | None:
+        return self.point_data.get("stationName") or self.point_metadata.get("stationName")
+
+    @property
+    def _point_name(self) -> str:
+        data = self.point_data
+        return (
+            data.get("visualId")
+            or data.get("displayName")
+            or self.point_metadata.get("visualId")
+            or self.point_metadata.get("displayName")
+            or self._uuid
+        )
+
+    @property
+    def _object_id(self) -> str:
+        if self._station_name:
+            return slugify(f"incharge_station_{self._station_name}_{self._point_name}_status")
+        return slugify(f"incharge_station_{self._point_name}_status")
 
     @staticmethod
     def _friendly_status(raw_status: str | None) -> str | None:
@@ -63,13 +90,77 @@ class InChargeStatusSensor(InChargeCoordinatorEntity, SensorEntity):
             return None
         return raw_status.replace("_", " ").title()
 
+    @staticmethod
+    def _normalized_price_components(price_components: dict) -> list[dict]:
+        normalized = []
+        for component in price_components.get("components") or []:
+            if not isinstance(component, dict):
+                continue
+            normalized_component = {
+                key: value for key, value in component.items() if key != "elements"
+            }
+            normalized_component["elements"] = [
+                dict(element)
+                for element in component.get("elements") or []
+                if isinstance(element, dict)
+            ]
+            normalized.append(normalized_component)
+        return normalized
+
+    @staticmethod
+    def _first_price_element(
+        price_components: list[dict], component_type: str
+    ) -> dict | None:
+        for component in price_components:
+            if str(component.get("type", "")).upper() != component_type:
+                continue
+            for element in component.get("elements") or []:
+                if element.get("price") is not None:
+                    return element
+        return None
+
+    def _price_attributes(self, price_components: dict) -> dict:
+        normalized_components = self._normalized_price_components(price_components)
+        component_types = [
+            component.get("type")
+            for component in normalized_components
+            if component.get("type")
+        ]
+        unique_types = list(dict.fromkeys(component_types))
+
+        kwh_element = self._first_price_element(normalized_components, "KWH")
+        fixed_element = self._first_price_element(normalized_components, "FIXED")
+        time_element = self._first_price_element(normalized_components, "TIME")
+
+        price_type = None
+        if len(unique_types) == 1:
+            price_type = unique_types[0]
+        elif len(unique_types) > 1:
+            price_type = "MIXED"
+
+        return {
+            "price_currency": price_components.get("currency"),
+            "price_type": price_type,
+            "price_component_types": unique_types,
+            "price_components": normalized_components,
+            "price_per_kwh": (kwh_element or {}).get("price"),
+            "price_start_fee": (fixed_element or {}).get("price"),
+            "price_time_fee_per_minute": (time_element or {}).get("price"),
+            "price_time_from": (time_element or kwh_element or {}).get("timeFrom"),
+            "price_time_to": (time_element or kwh_element or {}).get("timeTo"),
+        }
+
     @property
     def unique_id(self) -> str:
         return f"{self._uuid}_status"
 
     @property
+    def suggested_object_id(self) -> str:
+        return self._object_id
+
+    @property
     def name(self) -> str:
-        return f"{self.point_data.get('displayName', self.point_metadata.get('displayName', self._uuid))} status"
+        return f"{self._point_name} status"
 
     @property
     def native_value(self) -> str | None:
@@ -82,8 +173,7 @@ class InChargeStatusSensor(InChargeCoordinatorEntity, SensorEntity):
         connectors = data.get("connectors") or []
         first_connector = connectors[0] if connectors else {}
         price_components = data.get("priceComponents") or {}
-        first_component = (price_components.get("components") or [{}])[0]
-        first_element = (first_component.get("elements") or [{}])[0]
+        price_attributes = self._price_attributes(price_components)
         latitude = (location.get("coordinates") or {}).get("latitude")
         longitude = (location.get("coordinates") or {}).get("longitude")
         maps_url = None
@@ -112,11 +202,7 @@ class InChargeStatusSensor(InChargeCoordinatorEntity, SensorEntity):
             "connector_type": first_connector.get("pluginType")
             or first_connector.get("type"),
             "connector_id": first_connector.get("connectorId"),
-            "price_currency": price_components.get("currency"),
-            "price_type": first_component.get("type"),
-            "price_per_kwh": first_element.get("price"),
-            "price_time_from": first_element.get("timeFrom"),
-            "price_time_to": first_element.get("timeTo"),
+            **price_attributes,
             "status_updated": data.get("statusUpdateTimestamp"),
             "opening_hours": data.get("openingHours"),
             "remote_payment_methods": data.get(
@@ -169,6 +255,7 @@ class InChargeMyChargeStatusSensor(InChargeMyChargeCoordinatorEntity, SensorEnti
             "cards_error": self.mycharge_data.get("cards_error"),
             "dashboard_error": self.mycharge_data.get("dashboard_error"),
             "token_refresh_error": self.mycharge_data.get("token_refresh_error"),
+            "last_token_refresh": self.mycharge_data.get("last_token_refresh"),
             "reauth_required": self.mycharge_data.get("reauth_required"),
             "error": self.mycharge_data.get("error"),
         }

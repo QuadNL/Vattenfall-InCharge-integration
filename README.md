@@ -53,9 +53,8 @@ Open the integration settings to manage:
 - `Add charging point`
 - `Remove charging point`
 - `Add or update My InCharge account`
-- `Advanced`
 
-The polling interval is configured under `Advanced` and applies to the integration.
+The integration polls public charging stations every 5 minutes. My InCharge account data is refreshed every 15 minutes, or sooner when a token refresh is needed.
 
 ## My InCharge account
 

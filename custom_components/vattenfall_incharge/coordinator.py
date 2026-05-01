@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 import logging
 from typing import Any
 
+from homeassistant.components.persistent_notification import async_create, async_dismiss
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -14,9 +15,11 @@ from .api import InChargeClient
 from .const import (
     CONF_CHARGING_POINTS,
     CONF_MYCHARGE,
-    CONF_POLL_MINUTES,
-    DEFAULT_POLL_MINUTES,
+    DATA_SKIP_RELOAD_ONCE,
     DOMAIN,
+    MYCHARGE_POLL_MINUTES,
+    NOTIFICATION_MYCHARGE_AUTH,
+    PUBLIC_STATION_POLL_MINUTES,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -33,14 +36,37 @@ class InChargeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     ) -> None:
         self.entry = entry
         self.client = client
+        self._last_mycharge_update: datetime | None = None
+        self._force_mycharge_update = False
         super().__init__(
             hass,
             logger=_LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(
-                minutes=entry.options.get(CONF_POLL_MINUTES, DEFAULT_POLL_MINUTES)
-            ),
+            update_interval=timedelta(minutes=PUBLIC_STATION_POLL_MINUTES),
         )
+
+    def force_mycharge_update(self) -> None:
+        """Force the next refresh cycle to update My InCharge data."""
+        self._force_mycharge_update = True
+
+    def _update_mycharge_auth_notification(self, mycharge_data: dict | None) -> None:
+        """Show or clear a Home Assistant notification for My InCharge reauth."""
+        if not mycharge_data:
+            return
+        if mycharge_data.get("reauth_required"):
+            async_create(
+                self.hass,
+                (
+                    "The Vattenfall InCharge integration needs you to reconnect "
+                    "your My InCharge account. Open the integration settings and "
+                    "choose 'Add or update My InCharge account'."
+                ),
+                title="Vattenfall InCharge authentication required",
+                notification_id=NOTIFICATION_MYCHARGE_AUTH,
+            )
+            return
+        if mycharge_data.get("connected"):
+            async_dismiss(self.hass, NOTIFICATION_MYCHARGE_AUTH)
 
     async def _async_update_data(self) -> dict[str, Any]:
         charging_points = self.entry.options.get(CONF_CHARGING_POINTS, [])
@@ -54,9 +80,34 @@ class InChargeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         mycharge_data = None
         if self.entry.options.get(CONF_MYCHARGE):
+            now = datetime.now(UTC)
+            previous_data = (self.data or {}).get("mycharge") if self.data else None
+            tokens = self.client.mycharge_auth.get("tokens", {})
+            mycharge_due = (
+                self._force_mycharge_update
+                or previous_data is None
+                or self._last_mycharge_update is None
+                or now - self._last_mycharge_update
+                >= timedelta(minutes=MYCHARGE_POLL_MINUTES)
+                or self.client.mycharge_tokens_need_refresh(tokens)
+            )
+            if not mycharge_due:
+                mycharge_data = previous_data
+                self._update_mycharge_auth_notification(mycharge_data)
+                return {
+                    "charging_points": charging_point_data,
+                    "mycharge": mycharge_data,
+                }
+
             try:
                 mycharge_data = await self.client.async_get_mycharge_overview()
+                self._last_mycharge_update = now
+                self._force_mycharge_update = False
+                self._update_mycharge_auth_notification(mycharge_data)
                 if self.client.mycharge_auth != self.entry.options.get(CONF_MYCHARGE):
+                    entry_data = self.hass.data.get(DOMAIN, {}).get(self.entry.entry_id)
+                    if entry_data is not None:
+                        entry_data[DATA_SKIP_RELOAD_ONCE] = True
                     self.hass.config_entries.async_update_entry(
                         self.entry,
                         options={
@@ -74,6 +125,9 @@ class InChargeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     ),
                     "error": "Failed to update My InCharge account data",
                 }
+                self._last_mycharge_update = now
+                self._force_mycharge_update = False
+                self._update_mycharge_auth_notification(mycharge_data)
 
         return {
             "charging_points": charging_point_data,

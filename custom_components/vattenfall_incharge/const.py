@@ -1,10 +1,9 @@
 """Constants for the InCharge integration."""
 
-from datetime import timedelta
-
 DOMAIN = "vattenfall_incharge"
 DEFAULT_NAME = "Vattenfall InCharge"
-DEFAULT_POLL_MINUTES = 15
+PUBLIC_STATION_POLL_MINUTES = 5
+MYCHARGE_POLL_MINUTES = 15
 
 # Public mobile app compatibility values. These are not user secrets; the
 # Vattenfall backend expects requests that look like the official mobile app.
@@ -32,12 +31,14 @@ CONF_DEVICE_ID = "device_id"
 CONF_MYCHARGE = "mycharge"
 CONF_MYCHARGE_PROFILE = "profile"
 CONF_MYCHARGE_TOKENS = "tokens"
-CONF_POLL_MINUTES = "poll_minutes"
 CONF_SEARCH_TERM = "search_term"
 CONF_X_TOKEN = "x_token"
 
 DATA_CLIENT = "client"
 DATA_COORDINATOR = "coordinator"
+DATA_SKIP_RELOAD_ONCE = "skip_reload_once"
+
+SERVICE_REFRESH_MYCHARGE_TOKENS = "refresh_my_incharge_tokens"
+NOTIFICATION_MYCHARGE_AUTH = f"{DOMAIN}_my_incharge_authentication_required"
 
 PLATFORMS = ["sensor"]
-UPDATE_INTERVAL = timedelta(minutes=DEFAULT_POLL_MINUTES)

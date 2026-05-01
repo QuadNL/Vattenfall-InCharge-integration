@@ -20,11 +20,9 @@ from .const import (
     CONF_CHARGING_POINTS,
     CONF_DEVICE_ID,
     CONF_MYCHARGE,
-    CONF_POLL_MINUTES,
     CONF_SEARCH_TERM,
     CONF_X_TOKEN,
     DEFAULT_NAME,
-    DEFAULT_POLL_MINUTES,
     DOMAIN,
     MOBILE_APP_CRC,
     MOBILE_APP_SHA1,
@@ -44,7 +42,6 @@ class VattenfallInChargePublicStationsConfigFlow(
 
     def __init__(self) -> None:
         self._name = DEFAULT_NAME
-        self._poll_minutes = DEFAULT_POLL_MINUTES
         self._device_id: str | None = None
         self._x_token: str | None = None
         self._charging_points: list[dict[str, Any]] = []
@@ -56,7 +53,6 @@ class VattenfallInChargePublicStationsConfigFlow(
     def _create_config_entry(self) -> config_entries.FlowResult:
         options: dict[str, Any] = {
             CONF_CHARGING_POINTS: self._charging_points,
-            CONF_POLL_MINUTES: self._poll_minutes,
         }
         if self._mycharge_auth is not None:
             options[CONF_MYCHARGE] = self._mycharge_auth
@@ -92,7 +88,6 @@ class VattenfallInChargePublicStationsConfigFlow(
                 await self.async_set_unique_id(device_id)
                 self._abort_if_unique_id_configured()
                 self._name = user_input["name"]
-                self._poll_minutes = user_input[CONF_POLL_MINUTES]
                 self._device_id = device_id
                 self._x_token = x_token
                 return await self.async_step_add_first_station()
@@ -100,16 +95,6 @@ class VattenfallInChargePublicStationsConfigFlow(
         schema = vol.Schema(
             {
                 vol.Required("name", default=DEFAULT_NAME): str,
-                vol.Required(
-                    CONF_POLL_MINUTES, default=DEFAULT_POLL_MINUTES
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=1,
-                        max=120,
-                        step=1,
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
             }
         )
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
@@ -269,7 +254,6 @@ class VattenfallInChargePublicStationsOptionsFlow(config_entries.OptionsFlow):
                 "add_charging_point",
                 "remove_charging_points",
                 "mycharge_account",
-                "advanced",
             ],
         )
 
@@ -408,37 +392,4 @@ class VattenfallInChargePublicStationsOptionsFlow(config_entries.OptionsFlow):
             description_placeholders={
                 "auth_url": getattr(self, "_mycharge_authorize_url", ""),
             },
-        )
-
-    async def async_step_advanced(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.FlowResult:
-        if user_input is not None:
-            return self.async_create_entry(
-                title="",
-                data=self._merged_options(
-                    **{CONF_POLL_MINUTES: user_input[CONF_POLL_MINUTES]}
-                ),
-            )
-
-        schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_POLL_MINUTES,
-                    default=self._config_entry.options.get(
-                        CONF_POLL_MINUTES, DEFAULT_POLL_MINUTES
-                    ),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=1,
-                        max=120,
-                        step=1,
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-            }
-        )
-        return self.async_show_form(
-            step_id="advanced",
-            data_schema=schema,
         )

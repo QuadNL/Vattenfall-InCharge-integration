@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import logging
 
+import voluptuous as vol
+
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
-from .api import InChargeClient
+from .api import InChargeApiError, InChargeClient
 from .const import (
     CONF_APK_CRC,
     CONF_APK_SHA1,
@@ -19,13 +22,21 @@ from .const import (
     CONF_MYCHARGE_PROFILE,
     DATA_CLIENT,
     DATA_COORDINATOR,
+    DATA_SKIP_RELOAD_ONCE,
     DOMAIN,
     PLATFORMS,
+    SERVICE_REFRESH_MYCHARGE_TOKENS,
     CONF_X_TOKEN,
 )
 from .coordinator import InChargeDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+SERVICE_REFRESH_MYCHARGE_TOKENS_SCHEMA = vol.Schema(
+    {
+        vol.Optional("entry_id"): str,
+    }
+)
 
 
 def _mycharge_account_key(entry: ConfigEntry) -> str | None:
@@ -119,6 +130,8 @@ async def async_cleanup_orphan_registrations(
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up InCharge from a config entry."""
+    await async_setup_services(hass)
+
     client = InChargeClient(
         hass,
         device_id=entry.data[CONF_DEVICE_ID],
@@ -141,6 +154,59 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+async def async_setup_services(hass: HomeAssistant) -> None:
+    """Register integration services."""
+    if hass.services.has_service(DOMAIN, SERVICE_REFRESH_MYCHARGE_TOKENS):
+        return
+
+    async def refresh_mycharge_tokens(call: ServiceCall) -> None:
+        entry_id = call.data.get("entry_id")
+        entries = [
+            entry
+            for entry in hass.config_entries.async_entries(DOMAIN)
+            if not entry_id or entry.entry_id == entry_id
+        ]
+        if entry_id and not entries:
+            raise HomeAssistantError(f"No Vattenfall InCharge entry found for {entry_id}")
+
+        refreshed = 0
+        for entry in entries:
+            entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+            if not entry_data:
+                continue
+            client: InChargeClient = entry_data[DATA_CLIENT]
+            coordinator: InChargeDataUpdateCoordinator = entry_data[DATA_COORDINATOR]
+            if not client.mycharge_auth:
+                continue
+
+            try:
+                await client.async_refresh_mycharge_tokens(source="manual_service")
+            except InChargeApiError as err:
+                _LOGGER.warning("Manual My InCharge token refresh failed: %s", err)
+                raise HomeAssistantError(
+                    "My InCharge token refresh failed. Reconnect the account from "
+                    "Configure > Add or update My InCharge account, then run this test again."
+                ) from err
+            entry_data[DATA_SKIP_RELOAD_ONCE] = True
+            hass.config_entries.async_update_entry(
+                entry,
+                options={**entry.options, CONF_MYCHARGE: client.mycharge_auth},
+            )
+            coordinator.force_mycharge_update()
+            await coordinator.async_request_refresh()
+            refreshed += 1
+
+        if refreshed == 0:
+            raise HomeAssistantError("No configured My InCharge account found to refresh")
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_REFRESH_MYCHARGE_TOKENS,
+        refresh_mycharge_tokens,
+        schema=SERVICE_REFRESH_MYCHARGE_TOKENS_SCHEMA,
+    )
+
+
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload an InCharge config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
@@ -151,6 +217,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload config entry on update."""
+    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if entry_data and entry_data.pop(DATA_SKIP_RELOAD_ONCE, False):
+        _LOGGER.debug("Skipping reload after internal My InCharge token update")
+        return
     await hass.config_entries.async_reload(entry.entry_id)
 
 

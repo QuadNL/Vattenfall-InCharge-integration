@@ -244,7 +244,7 @@ class InChargeClient:
 
     @classmethod
     def mycharge_tokens_need_refresh(
-        cls, tokens: dict[str, Any], *, refresh_window: int = 600
+        cls, tokens: dict[str, Any], *, refresh_window: int = 1800
     ) -> bool:
         seconds_left = cls.mycharge_token_seconds_left(tokens)
         return seconds_left is None or seconds_left < refresh_window
@@ -293,14 +293,19 @@ class InChargeClient:
                 )
             return json.loads(text)
 
-    async def async_refresh_mycharge_tokens(self) -> dict[str, Any]:
+    async def async_refresh_mycharge_tokens(self, *, source: str = "automatic") -> dict[str, Any]:
         refresh_token = self.mycharge_auth.get("tokens", {}).get("refresh_token")
         if not refresh_token:
             raise InChargeApiError("No My InCharge refresh_token available.")
+        previous_seconds_left = self.mycharge_token_seconds_left(
+            self.mycharge_auth.get("tokens", {})
+        )
         payload = {
             "grant_type": "refresh_token",
             "client_id": MYCHARGE_CLIENT_ID,
             "refresh_token": refresh_token,
+            "scope": MYCHARGE_SCOPE,
+            "redirect_uri": MYCHARGE_REDIRECT_URI,
         }
         async with self._session.post(
             MYCHARGE_TOKEN_URL,
@@ -324,7 +329,21 @@ class InChargeClient:
             **self.mycharge_auth,
             "tokens": merged_tokens,
             "profile": self.build_mycharge_profile(merged_tokens),
+            "last_token_refresh": {
+                "source": source,
+                "refreshed_at": datetime.now(UTC).isoformat(),
+                "previous_seconds_left": previous_seconds_left,
+                "new_seconds_left": self.mycharge_token_seconds_left(merged_tokens),
+                "expires_at": self.build_mycharge_profile(merged_tokens).get("expires_at"),
+            },
         }
+        profile = self.mycharge_auth.get("profile") or {}
+        _LOGGER.info(
+            "My InCharge token refreshed successfully for account %s; token expires in %s seconds; source=%s",
+            profile.get("account_number") or "unknown",
+            self.mycharge_token_seconds_left(merged_tokens),
+            source,
+        )
         return self.mycharge_auth
 
     async def async_get_mycharge_account_hierarchy(self) -> Any:
@@ -1051,6 +1070,7 @@ class InChargeClient:
             "token_seconds_left": self.mycharge_token_seconds_left(
                 self.mycharge_auth.get("tokens", {})
             ),
+            "last_token_refresh": self.mycharge_auth.get("last_token_refresh"),
         }
 
     async def async_bootstrap_device(

@@ -1,0 +1,10 @@
+refresh_my_incharge_tokens:
+  name: Refresh My InCharge tokens
+  description: Manually refresh the My InCharge OAuth tokens for testing.
+  fields:
+    entry_id:
+      name: Config entry ID
+      description: Optional config entry ID. Leave empty to refresh all configured My InCharge accounts.
+      required: false
+      selector:
+        text: {}

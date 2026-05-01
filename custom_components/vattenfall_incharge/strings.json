@@ -5,8 +5,7 @@
         "title": "Set up Vattenfall InCharge",
         "description": "Create a local Vattenfall InCharge session for public charging stations and optional My InCharge account data.",
         "data": {
-          "name": "Name",
-          "poll_minutes": "Polling interval in minutes"
+          "name": "Name"
         }
       },
       "add_first_station": {
@@ -40,8 +39,7 @@
         "menu_options": {
           "add_charging_point": "Add charging point",
           "remove_charging_points": "Remove charging point",
-          "mycharge_account": "Add or update My InCharge account",
-          "advanced": "Advanced"
+          "mycharge_account": "Add or update My InCharge account"
         }
       },
       "add_charging_point": {
@@ -63,13 +61,6 @@
         "description": "Use this to connect My InCharge for the first time, or to refresh an expired or revoked My InCharge session. Open the login URL below in your browser, complete the login and OTP flow, then paste the full final callback URL here. If your browser shows an error after login, copy the URL from the address bar or browser error message.\n\n{auth_url}",
         "data": {
           "callback_url": "My InCharge callback URL"
-        }
-      },
-      "advanced": {
-        "title": "Advanced",
-        "description": "Update settings that apply to the whole integration.",
-        "data": {
-          "poll_minutes": "Polling interval in minutes"
         }
       }
     },
