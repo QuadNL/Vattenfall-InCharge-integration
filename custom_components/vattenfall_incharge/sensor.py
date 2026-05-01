@@ -233,8 +233,15 @@ class InChargeMyChargeEnergySensor(InChargeMyChargeChargingHistorySensor):
     """Total MyCharge charging energy for the recent period."""
 
     icon = "mdi:lightning-bolt"
-    device_class = SensorDeviceClass.ENERGY
     native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+
+    @property
+    def device_class(self) -> None:
+        return None
+
+    @property
+    def state_class(self) -> None:
+        return None
 
     @property
     def unique_id(self) -> str:
@@ -293,6 +300,10 @@ class InChargeMyChargeAverageConsumptionSensor(
     _period_days = 0
 
     @property
+    def device_class(self) -> None:
+        return None
+
+    @property
     def _dashboard(self) -> dict:
         return self.mycharge_data.get("dashboard") or {}
 
@@ -344,6 +355,10 @@ class InChargeMyChargeCostSensor(InChargeMyChargeCoordinatorEntity, SensorEntity
     _cost_key = ""
     _sensor_suffix = ""
     _sensor_name = ""
+
+    @property
+    def state_class(self) -> SensorStateClass:
+        return SensorStateClass.TOTAL
 
     @property
     def _costs(self) -> dict:
