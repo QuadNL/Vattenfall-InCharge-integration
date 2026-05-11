@@ -590,9 +590,7 @@ class InChargeClient:
                 active_days += 1
                 latest_days.append(
                     {
-                        "date": "-".join(str(part) for part in item.get("date", []))
-                        if isinstance(item.get("date"), list)
-                        else None,
+                        "date": cls._history_bucket_date(item),
                         "cost": cost,
                         "consumption_kwh": consumption,
                         "number_of_sessions": sessions,
@@ -612,6 +610,14 @@ class InChargeClient:
             "source_day_count": len(series),
             "latest_active_days": latest_days[-5:],
         }
+
+    @staticmethod
+    def _history_bucket_date(item: dict[str, Any]) -> str | None:
+        if isinstance(item.get("date"), list):
+            return "-".join(str(part) for part in item["date"])
+        if item.get("year") and item.get("month") and item.get("day"):
+            return f"{item['year']}-{item['month']}-{item['day']}"
+        return None
 
     @classmethod
     def _summarize_charging_history_page(
@@ -643,6 +649,9 @@ class InChargeClient:
                 "chargedKWh",
                 "chargedInKwh",
                 "chargedInKWh",
+                "consumptionInKWH",
+                "consumptionInKwh",
+                "consumption",
                 "charged",
                 "energyKwh",
                 "Geladen (kWh)",
@@ -885,7 +894,9 @@ class InChargeClient:
             errors["average_consumption_per_session_7d"] = str(err)
 
         costs: dict[str, Any] = {}
-        for period_key, (start, end) in self._mycharge_cost_periods().items():
+        periods = self._mycharge_cost_periods()
+        periods["last_30_days"] = self._mycharge_history_period(30)
+        for period_key, (start, end) in periods.items():
             query = urlencode(
                 {
                     "startTime": self._format_history_time(start),
@@ -926,6 +937,7 @@ class InChargeClient:
                 for period, value in average_consumption.items()
             },
             "costs": costs,
+            "last_30_days": costs.get("last_30_days"),
             "errors": errors,
         }
 
@@ -969,10 +981,54 @@ class InChargeClient:
         if isinstance(tokens, dict) and isinstance(tokens.get("content"), list):
             token_items = tokens["content"]
 
+        usage_summary = None
+        usage_by_card: list[dict[str, Any]] = []
+        usage_error = None
+        start, end = self._mycharge_history_period(30)
+        usage_query = urlencode(
+            {
+                "startTime": self._format_history_time(start),
+                "endTime": self._format_history_time(end),
+                "selectedAccount": account_number,
+            }
+        )
+        try:
+            usage_summary = await self._portal_request(
+                "GET",
+                f"/usage-data-pcu-readmodel/api/pcu-charging-history?{usage_query}",
+                bearer_token=id_token,
+                accept="application/vnd.vattenfall.cards-summary+json",
+            )
+            history_query = urlencode(
+                {
+                    "startTime": self._format_history_time(start),
+                    "endTime": self._format_history_time(end),
+                    "size": "20",
+                    "page": "0",
+                    "selectedAccount": account_number,
+                }
+            )
+            usage_history = await self._portal_request(
+                "GET",
+                f"/usage-data-pcu-readmodel/api/pcu-charging-history?{history_query}",
+                bearer_token=id_token,
+                accept="application/vnd.vattenfall.cards-history+json",
+            )
+            if isinstance(usage_history, dict) and isinstance(
+                usage_history.get("content"), list
+            ):
+                usage_by_card = usage_history["content"]
+        except InChargeApiError as err:
+            usage_error = str(err)
+
         return {
             "account_number": account_number,
             "card_count": len(token_items),
             "cards": token_items,
+            "usage_period_days": 30,
+            "usage_summary": usage_summary,
+            "usage_by_card": usage_by_card,
+            "usage_error": usage_error,
             "page": {
                 "number": tokens.get("number"),
                 "size": tokens.get("size"),

@@ -337,7 +337,32 @@ class InChargeMyChargeEnergySensor(InChargeMyChargeChargingHistorySensor):
 
     @property
     def native_value(self) -> float | None:
+        dashboard = self.mycharge_data.get("dashboard") or {}
+        last_30_days = dashboard.get("last_30_days") or {}
+        if last_30_days.get("consumption_kwh") is not None:
+            return last_30_days.get("consumption_kwh")
         return self._history.get("energy_kwh")
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        attributes = super().extra_state_attributes
+        dashboard = self.mycharge_data.get("dashboard") or {}
+        last_30_days = dashboard.get("last_30_days") or {}
+        if last_30_days.get("consumption_kwh") is not None:
+            attributes.update(
+                {
+                    "source": "dashboard_daily_summary",
+                    "period_start": last_30_days.get("period_start"),
+                    "period_end": last_30_days.get("period_end"),
+                    "account_number": last_30_days.get("account_number"),
+                    "validated_session_count": last_30_days.get("number_of_sessions"),
+                    "total_cost_incl_vat": last_30_days.get("cost"),
+                    "active_days": last_30_days.get("active_days"),
+                    "latest_active_days": last_30_days.get("latest_active_days"),
+                    "error": self.mycharge_data.get("dashboard_error"),
+                }
+            )
+        return attributes
 
 
 class InChargeMyChargeDurationSensor(InChargeMyChargeChargingHistorySensor):
@@ -614,6 +639,10 @@ class InChargeMyChargeCardsSensor(InChargeMyChargeCoordinatorEntity, SensorEntit
             "account_number": self._cards_data.get("account_number"),
             "pending_assignments": pending_assignments.get("pendingAssignments"),
             "ongoing_assignments": pending_assignments.get("ongoingAssignments"),
+            "usage_period_days": self._cards_data.get("usage_period_days"),
+            "usage_summary": self._cards_data.get("usage_summary"),
+            "usage_by_card": self._cards_data.get("usage_by_card"),
+            "usage_error": self._cards_data.get("usage_error"),
             "error": self.mycharge_data.get("cards_error"),
         }
         if cards:
@@ -634,15 +663,33 @@ class InChargeMyChargeCardSensor(InChargeMyChargeCoordinatorEntity, SensorEntity
 
     @staticmethod
     def _card_value(card: dict, *keys: str):
-        lower_lookup = {str(key).casefold(): value for key, value in card.items()}
         for key in keys:
-            value = card.get(key)
-            if value:
-                return value
-            value = lower_lookup.get(key.casefold())
-            if value:
+            value = InChargeMyChargeCardSensor._nested_card_value(card, key)
+            if value not in (None, ""):
                 return value
         return None
+
+    @staticmethod
+    def _nested_card_value(card: dict, path: str):
+        value: object = card
+        for key in path.split("."):
+            if not isinstance(value, dict):
+                return None
+            direct = value.get(key)
+            if direct is None:
+                lower_lookup = {
+                    str(child_key).casefold(): child_value
+                    for child_key, child_value in value.items()
+                }
+                direct = lower_lookup.get(key.casefold())
+            value = direct
+        return value
+
+    @staticmethod
+    def _format_card_status(value) -> str | None:
+        if value in (None, ""):
+            return None
+        return str(value).replace("_", " ").title()
 
     @staticmethod
     def _build_card_key(card: dict, index: int) -> str:
@@ -650,10 +697,12 @@ class InChargeMyChargeCardSensor(InChargeMyChargeCoordinatorEntity, SensorEntity
             card,
             "id",
             "tokenId",
-            "uid",
+            "details.uid",
+            "details.rfid",
             "UID",
             "tokenUid",
             "cardId",
+            "details.number",
             "cardNumber",
             "Number",
             "visualNumber",
@@ -669,15 +718,17 @@ class InChargeMyChargeCardSensor(InChargeMyChargeCoordinatorEntity, SensorEntity
         value = InChargeMyChargeCardSensor._card_value(
             card,
             "customName",
+            "details.name",
             "name",
             "Name",
             "displayName",
+            "details.number",
             "cardNumber",
             "Number",
             "visualNumber",
             "printedNumber",
             "tokenId",
-            "uid",
+            "details.uid",
             "UID",
             "id",
         )
@@ -689,7 +740,9 @@ class InChargeMyChargeCardSensor(InChargeMyChargeCoordinatorEntity, SensorEntity
 
     @property
     def _card(self) -> dict:
-        if self._index < len(self._cards) and isinstance(self._cards[self._index], dict):
+        if self._index < len(self._cards) and isinstance(
+            self._cards[self._index], dict
+        ):
             return self._cards[self._index]
         return self._initial_card
 
@@ -699,27 +752,76 @@ class InChargeMyChargeCardSensor(InChargeMyChargeCoordinatorEntity, SensorEntity
 
     @property
     def name(self) -> str:
-        return f"My InCharge card {self._display_card(self._card, str(self._index + 1))}"
+        return (
+            f"My InCharge card "
+            f"{self._display_card(self._card, str(self._index + 1))}"
+        )
 
     @property
     def native_value(self) -> str | None:
         card = self._card
-        value = self._card_value(card, "status", "state", "State", "tokenStatus", "cardStatus")
-        if value:
-            return str(value).replace("_", " ").title()
+        value = self._card_value(
+            card,
+            "status.state",
+            "state",
+            "State",
+            "tokenStatus",
+            "cardStatus",
+            "status.activation",
+            "activation",
+            "Activation",
+        )
+        if value not in (None, ""):
+            return self._format_card_status(value)
         return "Available"
 
     @property
     def extra_state_attributes(self) -> dict:
         card = self._card
+        usage = self._usage_for_card(card)
         return {
-            "uid": self._card_value(card, "uid", "UID", "tokenUid"),
-            "number": self._card_value(card, "number", "Number", "cardNumber"),
-            "card_name": self._card_value(card, "name", "Name", "customName"),
-            "activation": self._card_value(card, "activation", "Activation"),
-            "state": self._card_value(card, "state", "State"),
-            "valid_from": self._card_value(card, "validFrom", "Valid From"),
-            "valid_to": self._card_value(card, "validTo", "Valid To"),
+            "uid": self._card_value(card, "details.uid", "uid", "UID", "tokenUid"),
+            "rfid": self._card_value(card, "details.rfid", "rfid"),
+            "number": self._card_value(
+                card, "details.number", "number", "Number", "cardNumber"
+            ),
+            "card_name": self._card_value(
+                card, "details.name", "name", "Name", "customName"
+            ),
+            "card_type": self._card_value(card, "details.type", "type"),
+            "ocpi_type": self._card_value(card, "details.ocpiType", "OCPI Type"),
+            "activation": self._format_card_status(
+                self._card_value(card, "status.activation", "activation", "Activation")
+            ),
+            "state": self._format_card_status(
+                self._card_value(card, "status.state", "state", "State")
+            ),
+            "valid_from": self._card_value(
+                card, "status.validFrom", "validFrom", "Valid From"
+            ),
+            "valid_to": self._card_value(card, "status.validTo", "validTo", "Valid To"),
+            "emsp": self._card_value(card, "ownership.emsp"),
+            "origin": self._card_value(card, "ownership.origin"),
+            "effective_from": self._card_value(card, "ownership.effectiveFrom"),
+            "usage_period_days": (self.mycharge_data.get("cards") or {}).get(
+                "usage_period_days"
+            ),
+            "usage_consumption_kwh": (usage or {}).get("consumptionInKWH"),
+            "usage_sessions": (usage or {}).get("numberOfSessions"),
+            "usage_cost": (usage or {}).get("cost"),
+            "usage_currency": (usage or {}).get("currency"),
             "card": card,
             "source_index": self._index,
         }
+
+    def _usage_for_card(self, card: dict) -> dict | None:
+        card_number = self._card_value(card, "details.number", "cardNumber", "Number")
+        card_name = self._card_value(card, "details.name", "customName", "Name")
+        for item in (self.mycharge_data.get("cards") or {}).get("usage_by_card") or []:
+            if not isinstance(item, dict):
+                continue
+            if card_number and item.get("cardNumber") == card_number:
+                return item
+            if card_name and item.get("cardCustomName") == card_name:
+                return item
+        return None
