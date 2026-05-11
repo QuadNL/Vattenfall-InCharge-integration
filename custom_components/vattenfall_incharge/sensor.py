@@ -734,6 +734,28 @@ class InChargeMyChargeCardSensor(InChargeMyChargeCoordinatorEntity, SensorEntity
         )
         return str(value) if value else fallback
 
+    @staticmethod
+    def _card_label(card: dict, fallback: str) -> str:
+        assigned_name = InChargeMyChargeCardSensor._card_value(
+            card,
+            "customName",
+            "details.name",
+            "name",
+            "Name",
+            "displayName",
+        )
+        if assigned_name not in (None, ""):
+            return str(assigned_name)
+        card_number = InChargeMyChargeCardSensor._card_value(
+            card,
+            "details.number",
+            "cardNumber",
+            "Number",
+        )
+        if card_number not in (None, ""):
+            return f"Charging card {card_number}"
+        return f"Charging card {fallback}"
+
     @property
     def _cards(self) -> list:
         return ((self.mycharge_data.get("cards") or {}).get("cards")) or []
@@ -752,10 +774,7 @@ class InChargeMyChargeCardSensor(InChargeMyChargeCoordinatorEntity, SensorEntity
 
     @property
     def name(self) -> str:
-        return (
-            f"My InCharge card "
-            f"{self._display_card(self._card, str(self._index + 1))}"
-        )
+        return self._card_label(self._card, str(self._index + 1))
 
     @property
     def native_value(self) -> str | None:
