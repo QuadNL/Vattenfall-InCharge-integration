@@ -77,7 +77,6 @@ def _configured_entity_unique_ids(entry: ConfigEntry) -> set[str]:
                 f"{mycharge_key}_charging_costs_last_month",
                 f"{mycharge_key}_charging_costs_this_year",
                 f"{mycharge_key}_validated_sessions_30d",
-                f"{mycharge_key}_sessions_in_review_30d",
                 f"{mycharge_key}_cancelled_sessions_30d",
                 f"{mycharge_key}_charging_cards",
             }

@@ -40,7 +40,6 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 MYCHARGE_HISTORY_STATUSES = {
     "validated": "ACCEPTED,RATED,VALIDATED",
-    "in_review": "REJECTED,WITH_ISSUES",
     "cancelled": "CANCELLED",
 }
 
@@ -845,7 +844,6 @@ class InChargeClient:
             "period_end": self._format_history_time(end),
             "account_number": account_number,
             "validated": validated,
-            "in_review": history["in_review"],
             "cancelled": history["cancelled"],
         }
 

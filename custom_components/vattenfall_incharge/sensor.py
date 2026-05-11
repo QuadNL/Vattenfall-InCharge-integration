@@ -40,7 +40,6 @@ async def async_setup_entry(
                 InChargeMyChargeLastMonthCostSensor(coordinator),
                 InChargeMyChargeThisYearCostSensor(coordinator),
                 InChargeMyChargeValidatedSessionsSensor(coordinator),
-                InChargeMyChargeInReviewSessionsSensor(coordinator),
                 InChargeMyChargeCancelledSessionsSensor(coordinator),
                 InChargeMyChargeCardsSensor(coordinator),
             ]
@@ -587,15 +586,6 @@ class InChargeMyChargeValidatedSessionsSensor(InChargeMyChargeSessionsSensor):
     _history_key = "validated"
     _sensor_suffix = "validated_sessions_30d"
     _sensor_name = "My InCharge validated sessions last 30 days"
-
-
-class InChargeMyChargeInReviewSessionsSensor(InChargeMyChargeSessionsSensor):
-    """In-review My InCharge sessions for the recent period."""
-
-    _attr_entity_registry_enabled_default = False
-    _history_key = "in_review"
-    _sensor_suffix = "sessions_in_review_30d"
-    _sensor_name = "My InCharge sessions in review last 30 days"
 
 
 class InChargeMyChargeCancelledSessionsSensor(InChargeMyChargeSessionsSensor):
