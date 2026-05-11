@@ -300,9 +300,8 @@ class InChargeMyChargeChargingHistorySensor(
 
     @property
     def extra_state_attributes(self) -> dict:
-        return {
+        attributes = {
             "period": self._history.get("period"),
-            "period_days": self._history.get("period_days"),
             "period_start": self._history.get("period_start"),
             "period_end": self._history.get("period_end"),
             "account_number": self._history.get("account_number"),
@@ -312,6 +311,9 @@ class InChargeMyChargeChargingHistorySensor(
             ),
             "error": self.mycharge_data.get("charging_history_error"),
         }
+        if self._history.get("period_days") is not None:
+            attributes["period_days"] = self._history.get("period_days")
+        return attributes
 
 
 class InChargeMyChargeEnergySensor(InChargeMyChargeChargingHistorySensor):
@@ -406,6 +408,8 @@ class InChargeMyChargeDurationSensor(InChargeMyChargeChargingHistorySensor):
 
     @property
     def native_value(self) -> float | None:
+        if self._history.get("duration_hours") is not None:
+            return self._history.get("duration_hours")
         current_month = (
             ((self.mycharge_data.get("dashboard") or {}).get("costs") or {}).get(
                 "current_month"
@@ -414,18 +418,22 @@ class InChargeMyChargeDurationSensor(InChargeMyChargeChargingHistorySensor):
         )
         if current_month.get("duration_hours") is not None:
             return current_month.get("duration_hours")
-        return self._history.get("duration_hours")
+        return None
 
     @property
     def extra_state_attributes(self) -> dict:
         attributes = super().extra_state_attributes
+        if self._history.get("duration_hours") is not None:
+            attributes["source"] = "validated_sessions"
         current_month = (
             ((self.mycharge_data.get("dashboard") or {}).get("costs") or {}).get(
                 "current_month"
             )
             or {}
         )
-        if current_month.get("duration_hours") is not None:
+        if current_month.get("duration_hours") is not None and self._history.get(
+            "duration_hours"
+        ) is None:
             dashboard_errors = self.mycharge_data.get("dashboard_errors")
             attributes.update(
                 {

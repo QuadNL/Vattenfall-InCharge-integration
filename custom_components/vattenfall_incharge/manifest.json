@@ -8,5 +8,5 @@
   "iot_class": "cloud_polling",
   "loggers": ["custom_components.vattenfall_incharge"],
   "requirements": [],
-  "version": "0.4.2-beta.1"
+  "version": "0.4.2-beta.2"
 }

@@ -970,7 +970,7 @@ class InChargeClient:
                     "GET",
                     f"/usage-data-pcu-readmodel/api/pcu-charging-history?{query}",
                     bearer_token=id_token,
-                    accept="application/vnd.vattenfall.charging-summary-v2+json",
+                    accept="application/vnd.vattenfall.daily-charging-summary+json",
                 )
                 costs[period_key] = self._summarize_charging_costs(
                     payload,
