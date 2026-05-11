@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
+import re
 
 import voluptuous as vol
 
+from homeassistant.components.persistent_notification import async_create
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
@@ -25,6 +28,7 @@ from .const import (
     DATA_SKIP_RELOAD_ONCE,
     DOMAIN,
     PLATFORMS,
+    SERVICE_DOWNLOAD_MYCHARGE_REPORT,
     SERVICE_REFRESH_MYCHARGE_TOKENS,
     CONF_X_TOKEN,
 )
@@ -37,6 +41,33 @@ SERVICE_REFRESH_MYCHARGE_TOKENS_SCHEMA = vol.Schema(
         vol.Optional("entry_id"): str,
     }
 )
+SERVICE_DOWNLOAD_MYCHARGE_REPORT_SCHEMA = vol.Schema(
+    {
+        vol.Optional("entry_id"): str,
+        vol.Optional("format", default="csv"): vol.In(["csv", "xlsx"]),
+        vol.Optional("period", default="this_month"): vol.In(
+            [
+                "this_week",
+                "last_7_days",
+                "last_month",
+                "last_30_days",
+                "this_month",
+                "last_12_months",
+                "this_year",
+                "last_year",
+                "custom",
+            ]
+        ),
+        vol.Optional("start_date"): str,
+        vol.Optional("end_date"): str,
+        vol.Optional("filename"): str,
+    }
+)
+
+
+def _safe_report_filename(value: str) -> str:
+    sanitized = re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("._")
+    return sanitized or "my_incharge_report"
 
 
 def _mycharge_account_key(entry: ConfigEntry) -> str | None:
@@ -156,7 +187,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_setup_services(hass: HomeAssistant) -> None:
     """Register integration services."""
-    if hass.services.has_service(DOMAIN, SERVICE_REFRESH_MYCHARGE_TOKENS):
+    if (
+        hass.services.has_service(DOMAIN, SERVICE_REFRESH_MYCHARGE_TOKENS)
+        and hass.services.has_service(DOMAIN, SERVICE_DOWNLOAD_MYCHARGE_REPORT)
+    ):
         return
 
     async def refresh_mycharge_tokens(call: ServiceCall) -> None:
@@ -199,12 +233,100 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         if refreshed == 0:
             raise HomeAssistantError("No configured My InCharge account found to refresh")
 
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_REFRESH_MYCHARGE_TOKENS,
-        refresh_mycharge_tokens,
-        schema=SERVICE_REFRESH_MYCHARGE_TOKENS_SCHEMA,
-    )
+    async def download_mycharge_report(call: ServiceCall) -> None:
+        entry_id = call.data.get("entry_id")
+        report_format = call.data["format"]
+        period = call.data["period"]
+        start_date = call.data.get("start_date")
+        end_date = call.data.get("end_date")
+        custom_filename = call.data.get("filename")
+
+        entries = [
+            entry
+            for entry in hass.config_entries.async_entries(DOMAIN)
+            if not entry_id or entry.entry_id == entry_id
+        ]
+        if entry_id and not entries:
+            raise HomeAssistantError(f"No Vattenfall InCharge entry found for {entry_id}")
+
+        reports: list[tuple[Path, str]] = []
+        for entry in entries:
+            entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+            if not entry_data:
+                continue
+            client: InChargeClient = entry_data[DATA_CLIENT]
+            if not client.mycharge_auth:
+                continue
+
+            try:
+                tokens = client.mycharge_auth.get("tokens", {})
+                if client.mycharge_tokens_need_refresh(tokens):
+                    await client.async_refresh_mycharge_tokens(source="report_download")
+                    entry_data[DATA_SKIP_RELOAD_ONCE] = True
+                    hass.config_entries.async_update_entry(
+                        entry,
+                        options={**entry.options, CONF_MYCHARGE: client.mycharge_auth},
+                    )
+
+                report = await client.async_download_mycharge_charging_history_report(
+                    report_format=report_format,
+                    period_key=period,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+            except InChargeApiError as err:
+                _LOGGER.warning("My InCharge report download failed: %s", err)
+                raise HomeAssistantError(f"My InCharge report download failed: {err}") from err
+
+            extension = report["extension"]
+            account_number = str(report["account_number"])
+            if custom_filename:
+                filename = _safe_report_filename(custom_filename)
+                if not filename.lower().endswith(f".{extension}"):
+                    filename = f"{filename}.{extension}"
+            else:
+                start_label = str(report["period_start"]).split("T", maxsplit=1)[0]
+                end_label = str(report["period_end"]).split("T", maxsplit=1)[0]
+                filename = _safe_report_filename(
+                    f"my_incharge_{account_number}_{period}_{start_label}_{end_label}"
+                )
+                filename = f"{filename}.{extension}"
+
+            report_dir = Path(hass.config.path("www", DOMAIN, "reports"))
+            path = report_dir / filename
+
+            def write_report() -> None:
+                report_dir.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(report["content"])
+
+            await hass.async_add_executor_job(write_report)
+            reports.append((path, f"/local/{DOMAIN}/reports/{path.name}"))
+
+        if not reports:
+            raise HomeAssistantError("No configured My InCharge account found")
+
+        links = "\n".join(f"- [{path.name}]({url})" for path, url in reports)
+        async_create(
+            hass,
+            f"Your My InCharge report is ready:\n\n{links}",
+            title="Vattenfall InCharge report downloaded",
+            notification_id=f"{DOMAIN}_my_incharge_report_download",
+        )
+
+    if not hass.services.has_service(DOMAIN, SERVICE_REFRESH_MYCHARGE_TOKENS):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_REFRESH_MYCHARGE_TOKENS,
+            refresh_mycharge_tokens,
+            schema=SERVICE_REFRESH_MYCHARGE_TOKENS_SCHEMA,
+        )
+    if not hass.services.has_service(DOMAIN, SERVICE_DOWNLOAD_MYCHARGE_REPORT):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_DOWNLOAD_MYCHARGE_REPORT,
+            download_mycharge_report,
+            schema=SERVICE_DOWNLOAD_MYCHARGE_REPORT_SCHEMA,
+        )
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

@@ -15,7 +15,7 @@ import time
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from aiohttp import ClientError
 
@@ -41,6 +41,10 @@ _LOGGER = logging.getLogger(__name__)
 MYCHARGE_HISTORY_STATUSES = {
     "validated": "ACCEPTED,RATED,VALIDATED",
     "cancelled": "CANCELLED",
+}
+MYCHARGE_REPORT_FORMATS = {
+    "csv": ("text/vnd.vattenfall.charging-history-v2+csv", "csv"),
+    "xlsx": ("application/vnd.vattenfall.charging-history-v2+xlsx", "xlsx"),
 }
 
 
@@ -156,6 +160,39 @@ class InChargeClient:
             if "json" in response.headers.get("content-type", ""):
                 return json.loads(text)
             return text
+
+    async def _portal_request_raw(
+        self,
+        method: str,
+        path: str,
+        *,
+        bearer_token: str,
+        accept: str = "application/json, text/plain, */*",
+    ) -> tuple[int, dict[str, str], bytes]:
+        url = f"{PORTAL_BASE_URL}{path}"
+        headers = {
+            "Accept": accept,
+            "Accept-Language": "nl",
+            "Origin": "https://myincharge.vattenfall.com",
+            "Referer": "https://myincharge.vattenfall.com/",
+        }
+        if bearer_token:
+            headers["Authorization"] = f"Bearer {bearer_token}"
+            headers["Ocp-Apim-Subscription-Key"] = PORTAL_APIM_KEY
+
+        async with self._session.request(
+            method,
+            url,
+            headers=headers,
+            timeout=60,
+        ) as response:
+            content = await response.read()
+            if response.status >= 400:
+                text = content.decode("utf-8", errors="replace")
+                raise InChargeApiError(
+                    f"{method} {path} failed with {response.status}: {text}"
+                )
+            return response.status, dict(response.headers), content
 
     @staticmethod
     def _b64url(data: bytes) -> str:
@@ -500,6 +537,14 @@ class InChargeClient:
     def _format_history_end_time(value: datetime) -> str:
         return value.strftime("%Y-%m-%dT%H:%M:%S")
 
+    @staticmethod
+    def _header(headers: dict[str, str], name: str) -> str | None:
+        expected = name.casefold()
+        for key, value in headers.items():
+            if key.casefold() == expected:
+                return value
+        return None
+
     def _mycharge_history_period(self, period_days: int) -> tuple[datetime, datetime]:
         now = dt_util.now()
         start = (now - timedelta(days=period_days)).replace(
@@ -515,6 +560,59 @@ class InChargeClient:
             microsecond=0,
         )
         return start, end
+
+    @staticmethod
+    def _date_start(value: str) -> datetime:
+        parsed = dt_util.parse_date(value)
+        if parsed is None:
+            raise InChargeApiError(f"Invalid report date: {value}")
+        return datetime(
+            parsed.year,
+            parsed.month,
+            parsed.day,
+            0,
+            0,
+            0,
+            tzinfo=dt_util.DEFAULT_TIME_ZONE,
+        )
+
+    @classmethod
+    def _date_end(cls, value: str) -> datetime:
+        return cls._date_start(value) + timedelta(days=1) - timedelta(seconds=1)
+
+    @staticmethod
+    def _start_of_day(value: datetime) -> datetime:
+        return value.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    @classmethod
+    def _end_of_day(cls, value: datetime) -> datetime:
+        return cls._start_of_day(value) + timedelta(days=1) - timedelta(seconds=1)
+
+    @staticmethod
+    def _shift_months(value: datetime, months: int) -> datetime:
+        month_index = value.month - 1 + months
+        year = value.year + month_index // 12
+        month = month_index % 12 + 1
+        days_in_month = [
+            31,
+            29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28,
+            31,
+            30,
+            31,
+            30,
+            31,
+            31,
+            30,
+            31,
+            30,
+            31,
+        ][month - 1]
+        return value.replace(year=year, month=month, day=min(value.day, days_in_month))
+
+    @staticmethod
+    def _validate_report_period_length(start: datetime, end: datetime) -> None:
+        if (end.date() - start.date()).days > 365:
+            raise InChargeApiError("Report period must be 366 days or less")
 
     @staticmethod
     def _start_of_month(value: datetime) -> datetime:
@@ -550,6 +648,312 @@ class InChargeClient:
             "last_month": (last_month_start, last_month_end),
             "this_year": (year_start, next_day_start - timedelta(seconds=1)),
         }
+
+    def _mycharge_report_period(
+        self,
+        period_key: str,
+        *,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> tuple[datetime, datetime]:
+        now = dt_util.now()
+        today_start = self._start_of_day(now)
+        today_end = self._end_of_day(now)
+
+        if period_key == "custom":
+            if not start_date:
+                raise InChargeApiError("start_date is required for a custom report period")
+            start = self._date_start(start_date)
+            end = self._date_end(end_date or start_date)
+            if end < start:
+                raise InChargeApiError("end_date must be on or after start_date")
+            self._validate_report_period_length(start, end)
+            return start, end
+
+        if period_key == "this_week":
+            start = today_start - timedelta(days=today_start.weekday())
+            return start, today_end
+
+        if period_key == "last_7_days":
+            return today_start - timedelta(days=6), today_end
+
+        if period_key == "last_30_days":
+            return today_start - timedelta(days=29), today_end
+
+        if period_key == "last_12_months":
+            start = self._shift_months(today_start, -12) + timedelta(days=1)
+            self._validate_report_period_length(start, today_end)
+            return start, today_end
+
+        if period_key == "last_year":
+            year_start = today_start.replace(
+                year=today_start.year - 1, month=1, day=1
+            )
+            year_end = today_start.replace(
+                year=today_start.year - 1, month=12, day=31
+            ) + timedelta(hours=23, minutes=59, seconds=59)
+            self._validate_report_period_length(year_start, year_end)
+            return year_start, year_end
+
+        periods = self._mycharge_cost_periods()
+        normalized_key = "current_month" if period_key == "this_month" else period_key
+        if normalized_key not in periods:
+            raise InChargeApiError(f"Unsupported report period: {period_key}")
+        return periods[normalized_key]
+
+    @staticmethod
+    def _report_file_path_from_location(location: str, account_number: str) -> str:
+        if location.startswith("/"):
+            path = location
+            if "selectedAccount=" not in path:
+                separator = "&" if "?" in path else "?"
+                path = f"{path}{separator}selectedAccount={account_number}"
+            return path
+
+        parsed = urlparse(location)
+        if parsed.netloc == urlparse(PORTAL_BASE_URL).netloc:
+            path = parsed.path
+            if parsed.query:
+                path = f"{path}?{parsed.query}"
+            if "selectedAccount=" not in path:
+                separator = "&" if "?" in path else "?"
+                path = f"{path}{separator}selectedAccount={account_number}"
+            return path
+
+        if re.fullmatch(r"[0-9a-fA-F-]{36}", location):
+            return (
+                f"/usage-data-pcu-readmodel/api/files/{location}"
+                f"?selectedAccount={account_number}"
+            )
+
+        raise InChargeApiError(f"Unsupported report file location: {location}")
+
+    @staticmethod
+    def _is_blob_location(location: str) -> bool:
+        parsed = urlparse(location)
+        return parsed.scheme in {"http", "https"} and parsed.netloc.endswith(
+            ".blob.core.windows.net"
+        )
+
+    @classmethod
+    def _notification_parameter(
+        cls, notification: dict[str, Any], name: str
+    ) -> str | None:
+        parameters = notification.get("parameters")
+        if not isinstance(parameters, list):
+            return None
+        for parameter in parameters:
+            if not isinstance(parameter, dict):
+                continue
+            if str(parameter.get("name", "")).casefold() == name.casefold():
+                value = parameter.get("value")
+                return str(value) if value is not None else None
+        return None
+
+    @classmethod
+    def _matching_report_notification_url(
+        cls,
+        payload: Any,
+        *,
+        extension: str,
+        start: datetime,
+        end: datetime,
+    ) -> str | None:
+        if not isinstance(payload, dict) or not isinstance(payload.get("content"), list):
+            return None
+
+        start_label = start.strftime("%Y-%m-%d")
+        end_label = end.strftime("%Y-%m-%d")
+        for notification in payload["content"]:
+            if not isinstance(notification, dict):
+                continue
+            if notification.get("type") != "FILE":
+                continue
+            name = str(notification.get("name", ""))
+            if not name.lower().endswith(f".{extension}"):
+                continue
+
+            notification_start = cls._notification_parameter(notification, "startDate")
+            notification_end = cls._notification_parameter(notification, "endDate")
+            if notification_start and notification_start != start_label:
+                continue
+            if notification_end and notification_end != end_label:
+                continue
+
+            url = notification.get("url")
+            if url:
+                return str(url)
+            reference_id = notification.get("referenceId")
+            if reference_id:
+                return str(reference_id)
+        return None
+
+    async def _async_find_mycharge_report_notification_url(
+        self,
+        *,
+        bearer_token: str,
+        account_number: str,
+        extension: str,
+        start: datetime,
+        end: datetime,
+    ) -> str | None:
+        query = urlencode({"version": "2", "selectedAccount": account_number})
+        path = f"/live-notifications-v2/api/notifications?{query}"
+        status, _, content = await self._portal_request_raw(
+            "GET",
+            path,
+            bearer_token=bearer_token,
+            accept="application/vnd.vattenfall.notifications+json",
+        )
+        if status != 200:
+            return None
+        try:
+            payload = json.loads(content.decode("utf-8"))
+        except json.JSONDecodeError:
+            return None
+        return self._matching_report_notification_url(
+            payload,
+            extension=extension,
+            start=start,
+            end=end,
+        )
+
+    async def async_download_mycharge_charging_history_report(
+        self,
+        *,
+        report_format: str = "csv",
+        period_key: str = "this_month",
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> dict[str, Any]:
+        id_token = str(self.mycharge_auth.get("tokens", {}).get("id_token", ""))
+        if not id_token:
+            raise InChargeApiError("No My InCharge id_token available.")
+
+        profile = self.mycharge_auth.get("profile") or self.build_mycharge_profile(
+            self.mycharge_auth.get("tokens", {})
+        )
+        account_number = profile.get("account_number")
+        if not account_number:
+            raise InChargeApiError("No My InCharge account number available.")
+
+        format_key = report_format.lower()
+        if format_key not in MYCHARGE_REPORT_FORMATS:
+            raise InChargeApiError(f"Unsupported report format: {report_format}")
+        accept, extension = MYCHARGE_REPORT_FORMATS[format_key]
+
+        start, end = self._mycharge_report_period(
+            period_key,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        query = urlencode(
+            {
+                "startTime": self._format_history_time(start),
+                "endTime": self._format_history_time(end),
+                "selectedAccount": account_number,
+            }
+        )
+        history_path = f"/usage-data-pcu-readmodel/api/pcu-charging-history?{query}"
+        status, headers, content = await self._portal_request_raw(
+            "GET",
+            history_path,
+            bearer_token=id_token,
+            accept=accept,
+        )
+
+        blob_location = self._header(headers, "Location") or self._header(
+            headers, "Content-Location"
+        )
+        if status == 200 and content:
+            return {
+                "account_number": account_number,
+                "period": period_key,
+                "period_start": self._format_history_time(start),
+                "period_end": self._format_history_end_time(end),
+                "format": format_key,
+                "extension": extension,
+                "content": content,
+                "content_type": self._header(headers, "Content-Type"),
+            }
+
+        if status != 202:
+            raise InChargeApiError(
+                f"Report export returned {status} without downloadable content"
+            )
+
+        file_path = None
+        if blob_location and self._is_blob_location(blob_location):
+            download_url = blob_location
+        elif blob_location:
+            file_path = self._report_file_path_from_location(blob_location, account_number)
+            download_url = None
+        else:
+            download_url = None
+
+        for _ in range(15):
+            if download_url:
+                break
+            if not file_path:
+                notification_url = (
+                    await self._async_find_mycharge_report_notification_url(
+                        bearer_token=id_token,
+                        account_number=account_number,
+                        extension=extension,
+                        start=start,
+                        end=end,
+                    )
+                )
+                if notification_url:
+                    if self._is_blob_location(notification_url):
+                        download_url = notification_url
+                        break
+                    file_path = self._report_file_path_from_location(
+                        notification_url, account_number
+                    )
+                else:
+                    await asyncio.sleep(2)
+                    continue
+
+            file_status, file_headers, _ = await self._portal_request_raw(
+                "GET",
+                file_path,
+                bearer_token=id_token,
+            )
+            next_location = self._header(file_headers, "Location") or self._header(
+                file_headers, "Content-Location"
+            )
+            if next_location and self._is_blob_location(next_location):
+                download_url = next_location
+                break
+            if file_status not in (200, 202, 204):
+                raise InChargeApiError(
+                    f"Report file request returned unexpected status {file_status}"
+                )
+            await asyncio.sleep(2)
+
+        if not download_url:
+            raise InChargeApiError("Report file was not ready before the timeout")
+
+        async with self._session.get(download_url, timeout=60) as response:
+            report_content = await response.read()
+            if response.status >= 400:
+                text = report_content.decode("utf-8", errors="replace")
+                raise InChargeApiError(
+                    f"Report blob download failed with {response.status}: {text}"
+                )
+
+            return {
+                "account_number": account_number,
+                "period": period_key,
+                "period_start": self._format_history_time(start),
+                "period_end": self._format_history_end_time(end),
+                "format": format_key,
+                "extension": extension,
+                "content": report_content,
+                "content_type": response.headers.get("Content-Type"),
+                "content_length": len(report_content),
+            }
 
     @classmethod
     def _summarize_charging_costs(
