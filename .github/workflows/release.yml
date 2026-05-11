@@ -43,6 +43,7 @@ jobs:
         shell: bash
         run: |
           TAG="${GITHUB_REF_NAME}"
+          TITLE="Vattenfall InCharge ${TAG}"
           PRERELEASE_FLAG=""
           if [[ "$TAG" == *-* ]]; then
             PRERELEASE_FLAG="--prerelease"
@@ -51,12 +52,12 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" vattenfall_incharge.zip --clobber
             gh release edit "$TAG" \
-              --title "$TAG" \
+              --title "$TITLE" \
               $PRERELEASE_FLAG
           else
             gh release create "$TAG" \
               vattenfall_incharge.zip \
-              --title "$TAG" \
+              --title "$TITLE" \
               --generate-notes \
               $PRERELEASE_FLAG
           fi
