@@ -575,23 +575,27 @@ class InChargeClient:
 
         total_cost = 0.0
         total_kwh = 0.0
+        total_seconds = 0.0
         session_count = 0
         active_days = 0
         latest_days: list[dict[str, Any]] = []
         for item in series:
             cost = cls._as_float(item.get("cost")) or 0.0
             consumption = cls._as_float(item.get("consumption")) or 0.0
+            duration_seconds = cls._as_float(item.get("durationInSeconds")) or 0.0
             sessions = int(cls._as_float(item.get("numberOfSessions")) or 0)
             total_cost += cost
             total_kwh += consumption
+            total_seconds += duration_seconds
             session_count += sessions
-            if cost or consumption or sessions:
+            if cost or consumption or duration_seconds or sessions:
                 active_days += 1
                 latest_days.append(
                     {
                         "date": cls._history_bucket_date(item),
                         "cost": cost,
                         "consumption_kwh": consumption,
+                        "duration_seconds": round(duration_seconds),
                         "number_of_sessions": sessions,
                     }
                 )
@@ -604,6 +608,8 @@ class InChargeClient:
             "cost": round(total_cost, 2),
             "currency": "EUR",
             "consumption_kwh": round(total_kwh, 3),
+            "duration_hours": round(total_seconds / 3600, 3),
+            "duration_seconds": round(total_seconds),
             "number_of_sessions": session_count,
             "active_days": active_days,
             "source_day_count": len(series),
@@ -646,7 +652,8 @@ class InChargeClient:
         payload: Any,
         *,
         status_key: str,
-        period_days: int,
+        period_days: int | None,
+        period_key: str,
         period_start: datetime,
         period_end: datetime,
         account_number: str,
@@ -776,6 +783,7 @@ class InChargeClient:
         return {
             "account_number": account_number,
             "status_key": status_key,
+            "period": period_key,
             "period_days": period_days,
             "period_start": cls._format_history_time(period_start),
             "period_end": cls._format_history_time(period_end),
@@ -793,7 +801,7 @@ class InChargeClient:
     async def async_get_mycharge_charging_history_summary(
         self,
         *,
-        period_days: int = 30,
+        period_key: str = "current_month",
     ) -> dict[str, Any]:
         id_token = str(self.mycharge_auth.get("tokens", {}).get("id_token", ""))
         if not id_token:
@@ -806,7 +814,8 @@ class InChargeClient:
         if not account_number:
             raise InChargeApiError("No My InCharge account number available.")
 
-        start, end = self._mycharge_history_period(period_days)
+        periods = self._mycharge_cost_periods()
+        start, end = periods.get(period_key, periods["current_month"])
         history: dict[str, Any] = {}
         for status_key, status_value in MYCHARGE_HISTORY_STATUSES.items():
             query = urlencode(
@@ -829,7 +838,8 @@ class InChargeClient:
             history[status_key] = self._summarize_charging_history_page(
                 payload,
                 status_key=status_key,
-                period_days=period_days,
+                period_days=None,
+                period_key=period_key,
                 period_start=start,
                 period_end=end,
                 account_number=account_number,
@@ -839,7 +849,8 @@ class InChargeClient:
         return {
             "energy_kwh": validated["total_kwh"],
             "duration_hours": validated["total_duration_hours"],
-            "period_days": period_days,
+            "period": period_key,
+            "period_days": None,
             "period_start": self._format_history_time(start),
             "period_end": self._format_history_time(end),
             "account_number": account_number,
@@ -932,16 +943,6 @@ class InChargeClient:
             raise InChargeApiError("No My InCharge account number available.")
 
         errors: dict[str, str] = {}
-        common_query = urlencode({"period": "30", "selectedAccount": account_number})
-        total_hours = None
-        try:
-            total_hours = await self._portal_request(
-                "GET",
-                f"/usage-data-pcu-readmodel/api/cards/charging-history/total-hours?{common_query}",
-                bearer_token=id_token,
-            )
-        except InChargeApiError as err:
-            errors["total_hours_30d"] = str(err)
         average_consumption: dict[str, Any] = {}
         query = urlencode({"period": "7", "selectedAccount": account_number})
         try:
@@ -956,7 +957,6 @@ class InChargeClient:
 
         costs: dict[str, Any] = {}
         periods = self._mycharge_cost_periods()
-        periods["last_30_days"] = self._mycharge_history_period(30)
         for period_key, (start, end) in periods.items():
             query = urlencode(
                 {
@@ -984,11 +984,6 @@ class InChargeClient:
 
         return {
             "account_number": account_number,
-            "total_hours_30d": self._as_float(
-                total_hours.get("totalHoursCharged")
-                if isinstance(total_hours, dict)
-                else total_hours
-            ),
             "average_consumption_per_session": {
                 period: self._as_float(
                     value.get("averageConsumptionPerSession")
@@ -998,7 +993,6 @@ class InChargeClient:
                 for period, value in average_consumption.items()
             },
             "costs": costs,
-            "last_30_days": costs.get("last_30_days"),
             "errors": errors,
         }
 

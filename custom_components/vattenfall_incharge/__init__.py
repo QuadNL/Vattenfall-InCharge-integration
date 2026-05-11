@@ -70,14 +70,15 @@ def _configured_entity_unique_ids(entry: ConfigEntry) -> set[str]:
             {
                 f"{mycharge_key}_status",
                 f"{mycharge_key}_account",
-                f"{mycharge_key}_charging_energy_30d",
-                f"{mycharge_key}_charging_duration_30d",
+                f"{mycharge_key}_charging_energy_this_month",
+                f"{mycharge_key}_charging_energy_this_year",
+                f"{mycharge_key}_charging_duration_this_month",
                 f"{mycharge_key}_average_consumption_per_session_7d",
-                f"{mycharge_key}_charging_costs_current_month",
+                f"{mycharge_key}_charging_costs_this_month",
                 f"{mycharge_key}_charging_costs_last_month",
                 f"{mycharge_key}_charging_costs_this_year",
-                f"{mycharge_key}_validated_sessions_30d",
-                f"{mycharge_key}_cancelled_sessions_30d",
+                f"{mycharge_key}_validated_sessions_this_month",
+                f"{mycharge_key}_cancelled_sessions_this_month",
                 f"{mycharge_key}_charging_cards",
             }
         )
