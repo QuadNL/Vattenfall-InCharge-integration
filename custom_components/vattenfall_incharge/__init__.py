@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import logging
+import html
 from pathlib import Path
 import re
+import secrets
+import time
 
 from aiohttp import web
 import voluptuous as vol
@@ -38,6 +41,9 @@ from .const import (
 from .coordinator import InChargeDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+DATA_REPORT_DOWNLOADS = "report_downloads"
+DATA_REPORT_DOWNLOAD_RATE_LIMIT = "report_download_rate_limit"
+REPORT_DOWNLOAD_MIN_INTERVAL = 30
 
 SERVICE_REFRESH_MYCHARGE_TOKENS_SCHEMA = vol.Schema(
     {
@@ -73,8 +79,8 @@ def _safe_report_filename(value: str) -> str:
     return sanitized or "my_incharge_report"
 
 
-def _report_download_url(hass: HomeAssistant, path: Path) -> str:
-    relative_url = f"/api/{DOMAIN}/reports/{path.name}"
+def _report_download_url(hass: HomeAssistant, report_id: str) -> str:
+    relative_url = f"/api/{DOMAIN}/reports/{report_id}"
     try:
         base_url = get_url(hass, allow_internal=True, allow_external=True)
     except Exception:  # pragma: no cover - fallback when HA has no URL configured
@@ -82,8 +88,8 @@ def _report_download_url(hass: HomeAssistant, path: Path) -> str:
     return f"{base_url.rstrip('/')}{relative_url}"
 
 
-def _report_content_type(path: Path) -> str:
-    suffix = path.suffix.lower()
+def _report_content_type(filename: str) -> str:
+    suffix = Path(filename).suffix.lower()
     if suffix == ".csv":
         return "text/csv"
     if suffix == ".xlsx":
@@ -91,31 +97,56 @@ def _report_content_type(path: Path) -> str:
     return "application/octet-stream"
 
 
+def _report_download_link(filename: str, url: str) -> str:
+    escaped_url = html.escape(url, quote=True)
+    escaped_name = html.escape(filename, quote=True)
+    return (
+        f'<a href="{escaped_url}" download="{escaped_name}" '
+        f'target="_blank" rel="noreferrer">Download report</a>'
+    )
+
+
+def _mycharge_account_number(client: InChargeClient, fallback: str) -> str:
+    profile = client.mycharge_auth.get("profile") or {}
+    account_number = profile.get("account_number")
+    if account_number:
+        return str(account_number)
+    return fallback
+
+
 class InChargeReportDownloadView(HomeAssistantView):
     """Download My InCharge reports saved by the integration."""
 
-    url = f"/api/{DOMAIN}/reports/{{filename}}"
+    url = f"/api/{DOMAIN}/reports/{{report_id}}"
     name = f"api:{DOMAIN}:reports"
-    requires_auth = True
+    requires_auth = False
 
     def __init__(self, hass: HomeAssistant) -> None:
         self.hass = hass
 
-    async def get(self, request: web.Request, filename: str) -> web.StreamResponse:
+    async def get(self, request: web.Request, report_id: str) -> web.StreamResponse:
         """Return a saved report as a browser download."""
-        safe_filename = _safe_report_filename(filename)
-        if safe_filename != filename:
+        if not re.fullmatch(r"[A-Za-z0-9_-]{24,}", report_id):
             raise web.HTTPNotFound()
 
-        path = Path(self.hass.config.path("www", DOMAIN, "reports")) / safe_filename
+        report = self.hass.data.get(DOMAIN, {}).get(DATA_REPORT_DOWNLOADS, {}).get(
+            report_id
+        )
+        if not report:
+            raise web.HTTPNotFound()
+
+        path = Path(report["path"])
         if not path.is_file():
             raise web.HTTPNotFound()
 
-        return web.FileResponse(
-            path,
+        filename = report["filename"]
+        body = await self.hass.async_add_executor_job(path.read_bytes)
+        return web.Response(
+            body=body,
+            content_type=report.get("content_type") or _report_content_type(filename),
             headers={
-                "Content-Disposition": f'attachment; filename="{path.name}"',
-                "Content-Type": _report_content_type(path),
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Content-Length": str(len(body)),
             },
         )
 
@@ -304,7 +335,8 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         if entry_id and not entries:
             raise HomeAssistantError(f"No Vattenfall InCharge entry found for {entry_id}")
 
-        reports: list[tuple[Path, str]] = []
+        reports: list[tuple[str, str]] = []
+        skipped_by_rate_limit = 0
         for entry in entries:
             entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
             if not entry_data:
@@ -312,6 +344,29 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             client: InChargeClient = entry_data[DATA_CLIENT]
             if not client.mycharge_auth:
                 continue
+            account_number = _mycharge_account_number(client, entry.entry_id)
+            rate_limits = hass.data[DOMAIN].setdefault(
+                DATA_REPORT_DOWNLOAD_RATE_LIMIT, {}
+            )
+            now = time.monotonic()
+            last_request = rate_limits.get(account_number)
+            if last_request is not None:
+                seconds_left = REPORT_DOWNLOAD_MIN_INTERVAL - (now - last_request)
+                if seconds_left > 0:
+                    wait_seconds = int(seconds_left) + 1
+                    async_create(
+                        hass,
+                        (
+                            "A My InCharge report download was requested too soon.\n\n"
+                            f"Please wait {wait_seconds} seconds before requesting "
+                            "a new report."
+                        ),
+                        title="Vattenfall InCharge report download delayed",
+                        notification_id=f"{DOMAIN}_my_incharge_report_rate_limit",
+                    )
+                    skipped_by_rate_limit += 1
+                    continue
+            rate_limits[account_number] = now
 
             try:
                 tokens = client.mycharge_auth.get("tokens", {})
@@ -347,28 +402,38 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                 )
                 filename = f"{filename}.{extension}"
 
-            report_dir = Path(hass.config.path("www", DOMAIN, "reports"))
-            path = report_dir / filename
+            report_id = secrets.token_urlsafe(24)
+            report_dir = Path(hass.config.path(DOMAIN, "reports"))
+            path = report_dir / f"{report_id}.{extension}"
 
             def write_report() -> None:
                 report_dir.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(report["content"])
 
             await hass.async_add_executor_job(write_report)
-            reports.append((path, _report_download_url(hass, path)))
+            hass.data[DOMAIN].setdefault(DATA_REPORT_DOWNLOADS, {})[report_id] = {
+                "path": str(path),
+                "filename": filename,
+                "content_type": report.get("content_type")
+                or _report_content_type(filename),
+            }
+            reports.append((filename, _report_download_url(hass, report_id)))
 
+        if not reports and skipped_by_rate_limit:
+            return
         if not reports:
             raise HomeAssistantError("No configured My InCharge account found")
 
         if len(reports) == 1:
-            path, url = reports[0]
+            filename, url = reports[0]
             message = (
-                f"Report saved as `{path.name}`.\n\n"
-                f"[Download report]({url})"
+                f"Report saved as `{filename}`.\n\n"
+                f"{_report_download_link(filename, url)}"
             )
         else:
             links = "\n".join(
-                f"- [Download {path.name}]({url})" for path, url in reports
+                f"- {_report_download_link(filename, url)} `{filename}`"
+                for filename, url in reports
             )
             message = f"Reports are ready:\n\n{links}"
         async_create(

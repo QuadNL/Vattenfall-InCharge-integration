@@ -9,10 +9,11 @@ Home Assistant custom integration for Vattenfall InCharge public charging statio
 - Add and remove configured charging stations from the integration settings
 - Connect a My InCharge account with the Vattenfall login and OTP flow
 - Expose basic My InCharge account status and account hierarchy data
-- Expose My InCharge charging energy and charging time totals for the last 30 days
+- Expose My InCharge charging energy and charging time totals
 - Expose My InCharge dashboard widgets such as average kWh per session and charging costs
-- Expose My InCharge charging-history counts for validated, in-review and cancelled sessions
+- Expose My InCharge charging-history counts for validated and cancelled sessions
 - Expose My InCharge charging-card counts, pending assignments and per-card sensors when cards are present
+- Download My InCharge charging-history reports as CSV or XLSX from Home Assistant
 
 Vattenfall InCharge stations are fully supported. Other charging networks exposed through the same app API are best effort and may return less consistent names or grouping.
 
@@ -66,19 +67,63 @@ Current My InCharge entities:
 
 - `My InCharge status`
 - `My InCharge account`
-- `My InCharge charging energy last 30 days`
-- `My InCharge charging time last 30 days`
-- `My InCharge average consumption per session last 7 days`
-- `My InCharge charging costs current month`
-- `My InCharge charging costs last month`
-- `My InCharge charging costs this year`
-- `My InCharge validated sessions last 30 days`
-- `My InCharge sessions in review last 30 days`
-- `My InCharge cancelled sessions last 30 days`
-- `My InCharge charging cards`
+- `Charging energy this month`
+- `Charging energy this year`
+- `Charging time this month`
+- `Average consumption per session last 7 days`
+- `Charging costs this month`
+- `Charging costs last month`
+- `Charging costs this year`
+- `Validated sessions this month`
+- `Cancelled sessions this month`
+- `Charging cards`
 - one `My InCharge card ...` sensor per returned charging card
 
-Future My InCharge features may include report download support.
+## Report downloads
+
+The service `vattenfall_incharge.download_my_incharge_report` downloads a My InCharge charging-history report and creates a Home Assistant notification with a download link.
+
+Supported formats:
+
+- `csv`
+- `xlsx`
+
+Supported periods:
+
+- `this_week`
+- `last_7_days`
+- `last_month`
+- `last_30_days`
+- `this_month`
+- `last_12_months`
+- `this_year`
+- `last_year`
+- `custom`
+
+Example service call:
+
+```yaml
+service: vattenfall_incharge.download_my_incharge_report
+data:
+  period: this_month
+  format: xlsx
+```
+
+Example dashboard button:
+
+```yaml
+type: button
+name: Download My InCharge report
+icon: mdi:file-download-outline
+tap_action:
+  action: call-service
+  service: vattenfall_incharge.download_my_incharge_report
+  data:
+    period: this_month
+    format: xlsx
+```
+
+Report download requests are rate limited to once per 30 seconds per My InCharge account. If a new request is made too soon, Home Assistant shows a notification with the remaining wait time and no request is sent to Vattenfall.
 
 ## Entities
 

@@ -11,7 +11,7 @@ refresh_my_incharge_tokens:
 
 download_my_incharge_report:
   name: Download My InCharge report
-  description: Download a My InCharge charging-history report to /config/www/vattenfall_incharge/reports.
+  description: Download a My InCharge charging-history report and create a Home Assistant notification with a download link.
   fields:
     entry_id:
       name: Config entry ID
