@@ -592,6 +592,7 @@ class InChargeMyChargeValidatedSessionsSensor(InChargeMyChargeSessionsSensor):
 class InChargeMyChargeInReviewSessionsSensor(InChargeMyChargeSessionsSensor):
     """In-review My InCharge sessions for the recent period."""
 
+    _attr_entity_registry_enabled_default = False
     _history_key = "in_review"
     _sensor_suffix = "sessions_in_review_30d"
     _sensor_name = "My InCharge sessions in review last 30 days"

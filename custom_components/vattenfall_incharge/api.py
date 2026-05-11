@@ -620,6 +620,28 @@ class InChargeClient:
         return None
 
     @classmethod
+    def _billing_price_variants(cls, item: dict[str, Any]) -> list[dict[str, Any]]:
+        billing_details = item.get("billingDetails")
+        if not isinstance(billing_details, dict):
+            return []
+        variants = billing_details.get("priceVariants")
+        if not isinstance(variants, list):
+            return []
+        return [
+            {
+                "time_from": variant.get("timeFrom"),
+                "time_to": variant.get("timeTo"),
+                "price_per_kwh_excl_vat": cls._as_float(
+                    variant.get("billingPricePerKWH")
+                ),
+                "kwh_cost_excl_vat": cls._as_float(variant.get("kwhCostExclVat")),
+                "consumption_kwh": cls._as_float(variant.get("consumptionInKWH")),
+            }
+            for variant in variants
+            if isinstance(variant, dict)
+        ]
+
+    @classmethod
     def _summarize_charging_history_page(
         cls,
         payload: Any,
@@ -682,23 +704,64 @@ class InChargeClient:
                 cost_matches += 1
 
             if len(latest_sessions) < 5:
+                price_variants = cls._billing_price_variants(item)
                 latest_sessions.append(
                     {
+                        "transaction_id": cls._first_value(item, "transactionId"),
                         "card": cls._first_value(item, "cardNumber", "Laadpas"),
                         "custom_name": cls._first_value(
                             item, "customName", "Aangepaste naam"
                         ),
+                        "station_name": cls._first_value(item, "stationName"),
+                        "point_name": cls._first_value(item, "pointName"),
                         "charging_station": cls._first_value(
-                            item, "chargingStation", "Laadpaal"
+                            item, "chargingStation", "stationName", "Laadpaal"
                         ),
                         "address": cls._first_value(item, "address", "adres"),
+                        "postalcode": cls._first_value(item, "zipCode", "postcode"),
                         "city": cls._first_value(item, "city", "stad"),
-                        "start_time": cls._first_value(item, "startTime", "Starttijd"),
-                        "end_time": cls._first_value(item, "endTime", "Eindtijd"),
+                        "station_operator": cls._first_value(item, "stationOperator"),
+                        "cpo_name": cls._first_value(item, "cpoName"),
+                        "cpo_type": cls._first_value(item, "cpoType"),
+                        "start_time": cls._first_value(
+                            item, "startTimeWithTimezone", "startTime", "Starttijd"
+                        ),
+                        "end_time": cls._first_value(
+                            item, "endTimeWithTimezone", "endTime", "Eindtijd"
+                        ),
+                        "duration": cls._first_value(item, "duration", "Duur"),
                         "duration_seconds": duration_seconds,
                         "charged_kwh": charged_kwh,
+                        "price_per_kwh_excl_vat": (
+                            price_variants[0].get("price_per_kwh_excl_vat")
+                            if price_variants
+                            else None
+                        ),
+                        "price_per_minute_excl_vat": cls._first_float(
+                            item,
+                            "pricePerMinuteExclVat",
+                            "Prijs per minuut (excl. btw)",
+                        ),
+                        "minute_price_duration": cls._first_float(
+                            item, "minutePriceDuration", "Minuut-prijsduur"
+                        ),
+                        "start_fee_excl_vat": cls._first_float(
+                            item,
+                            "priceForStartingFeeExclVat",
+                            "Starttarief (excl. btw)",
+                        ),
+                        "total_cost_excl_vat": cls._first_float(
+                            item,
+                            "totalCostExclVat",
+                            "Totale kosten (excl. btw)",
+                        ),
                         "total_cost_incl_vat": cost_incl_vat,
+                        "invoice_cost_incl_vat": cls._first_float(
+                            item, "invoiceCostInclVat", "Factuurkosten (incl. Btw)"
+                        ),
                         "currency": cls._first_value(item, "currency", "Currency"),
+                        "status": cls._first_value(item, "status"),
+                        "price_variants": price_variants,
                     }
                 )
 
