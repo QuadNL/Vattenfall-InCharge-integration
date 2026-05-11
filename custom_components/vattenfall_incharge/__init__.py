@@ -6,14 +6,17 @@ import logging
 from pathlib import Path
 import re
 
+from aiohttp import web
 import voluptuous as vol
 
+from homeassistant.components.http import HomeAssistantView
 from homeassistant.components.persistent_notification import async_create
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.network import get_url
 
 from .api import InChargeApiError, InChargeClient
 from .const import (
@@ -68,6 +71,53 @@ SERVICE_DOWNLOAD_MYCHARGE_REPORT_SCHEMA = vol.Schema(
 def _safe_report_filename(value: str) -> str:
     sanitized = re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("._")
     return sanitized or "my_incharge_report"
+
+
+def _report_download_url(hass: HomeAssistant, path: Path) -> str:
+    relative_url = f"/api/{DOMAIN}/reports/{path.name}"
+    try:
+        base_url = get_url(hass, allow_internal=True, allow_external=True)
+    except Exception:  # pragma: no cover - fallback when HA has no URL configured
+        return relative_url
+    return f"{base_url.rstrip('/')}{relative_url}"
+
+
+def _report_content_type(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix == ".csv":
+        return "text/csv"
+    if suffix == ".xlsx":
+        return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    return "application/octet-stream"
+
+
+class InChargeReportDownloadView(HomeAssistantView):
+    """Download My InCharge reports saved by the integration."""
+
+    url = f"/api/{DOMAIN}/reports/{{filename}}"
+    name = f"api:{DOMAIN}:reports"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self.hass = hass
+
+    async def get(self, request: web.Request, filename: str) -> web.StreamResponse:
+        """Return a saved report as a browser download."""
+        safe_filename = _safe_report_filename(filename)
+        if safe_filename != filename:
+            raise web.HTTPNotFound()
+
+        path = Path(self.hass.config.path("www", DOMAIN, "reports")) / safe_filename
+        if not path.is_file():
+            raise web.HTTPNotFound()
+
+        return web.FileResponse(
+            path,
+            headers={
+                "Content-Disposition": f'attachment; filename="{path.name}"',
+                "Content-Type": _report_content_type(path),
+            },
+        )
 
 
 def _mycharge_account_key(entry: ConfigEntry) -> str | None:
@@ -187,6 +237,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_setup_services(hass: HomeAssistant) -> None:
     """Register integration services."""
+    hass.data.setdefault(DOMAIN, {})
+    if not hass.data[DOMAIN].get("report_download_view_registered"):
+        hass.http.register_view(InChargeReportDownloadView(hass))
+        hass.data[DOMAIN]["report_download_view_registered"] = True
+
     if (
         hass.services.has_service(DOMAIN, SERVICE_REFRESH_MYCHARGE_TOKENS)
         and hass.services.has_service(DOMAIN, SERVICE_DOWNLOAD_MYCHARGE_REPORT)
@@ -300,15 +355,25 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                 path.write_bytes(report["content"])
 
             await hass.async_add_executor_job(write_report)
-            reports.append((path, f"/local/{DOMAIN}/reports/{path.name}"))
+            reports.append((path, _report_download_url(hass, path)))
 
         if not reports:
             raise HomeAssistantError("No configured My InCharge account found")
 
-        links = "\n".join(f"- [{path.name}]({url})" for path, url in reports)
+        if len(reports) == 1:
+            path, url = reports[0]
+            message = (
+                f"Report saved as `{path.name}`.\n\n"
+                f"[Download report]({url})"
+            )
+        else:
+            links = "\n".join(
+                f"- [Download {path.name}]({url})" for path, url in reports
+            )
+            message = f"Reports are ready:\n\n{links}"
         async_create(
             hass,
-            f"Your My InCharge report is ready:\n\n{links}",
+            message,
             title="Vattenfall InCharge report downloaded",
             notification_id=f"{DOMAIN}_my_incharge_report_download",
         )
