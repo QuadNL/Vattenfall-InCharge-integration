@@ -48,8 +48,15 @@ jobs:
             PRERELEASE_FLAG="--prerelease"
           fi
 
-          gh release create "$TAG" \
-            vattenfall_incharge.zip \
-            --title "$TAG" \
-            --generate-notes \
-            $PRERELEASE_FLAG
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" vattenfall_incharge.zip --clobber
+            gh release edit "$TAG" \
+              --title "$TAG" \
+              $PRERELEASE_FLAG
+          else
+            gh release create "$TAG" \
+              vattenfall_incharge.zip \
+              --title "$TAG" \
+              --generate-notes \
+              $PRERELEASE_FLAG
+          fi

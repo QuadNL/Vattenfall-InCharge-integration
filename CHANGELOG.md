@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.5.1
+
+### Changed
+
+- Updated the GitHub release workflow so an existing release is updated instead of failing with `Release.tag_name already exists`.
+- Released the report download changes through the normal tag-based GitHub Actions release flow.
+
 ## v0.5.0
 
 ### Added
