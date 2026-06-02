@@ -3,6 +3,7 @@
   "name": "Vattenfall InCharge",
   "codeowners": ["@QuadNL"],
   "config_flow": true,
+  "dependencies": ["http"],
   "documentation": "https://github.com/QuadNL/Vattenfall-InCharge-integration",
   "integration_type": "hub",
   "issue_tracker": "https://github.com/QuadNL/Vattenfall-InCharge-integration/issues",
