@@ -310,6 +310,7 @@ class InChargeClient:
             "code": code,
             "redirect_uri": MYCHARGE_REDIRECT_URI,
             "code_verifier": code_verifier,
+            "scope": MYCHARGE_SCOPE,
         }
         async with self._session.post(
             MYCHARGE_TOKEN_URL,
@@ -327,7 +328,17 @@ class InChargeClient:
                 raise InChargeApiError(
                     f"POST token exchange failed with {response.status}: {text}"
                 )
-            return json.loads(text)
+            tokens = json.loads(text)
+        if not tokens.get("refresh_token"):
+            _LOGGER.warning(
+                "My InCharge code exchange response did not include a refresh_token; "
+                "session will expire after the initial access token lifetime with no way to refresh"
+            )
+        else:
+            _LOGGER.info(
+                "My InCharge code exchange successful; refresh_token present — persistent sessions enabled"
+            )
+        return tokens
 
     async def async_refresh_mycharge_tokens(self, *, source: str = "automatic") -> dict[str, Any]:
         refresh_token = self.mycharge_auth.get("tokens", {}).get("refresh_token")
@@ -1337,7 +1348,7 @@ class InChargeClient:
             **summary,
             "period_days": period_days,
             "period_start": self._format_history_time(start),
-            "period_end": self._format_history_time(end),
+            "period_end": self._format_history_end_time(end),
             "account_number": account_number,
         }
 
@@ -1510,7 +1521,16 @@ class InChargeClient:
 
     async def async_get_mycharge_overview(self) -> dict[str, Any]:
         tokens = self.mycharge_auth.get("tokens", {})
-        if tokens.get("refresh_token") and self.mycharge_tokens_need_refresh(tokens):
+        has_refresh_token = bool(tokens.get("refresh_token"))
+        seconds_left = self.mycharge_token_seconds_left(tokens)
+        needs_refresh = self.mycharge_tokens_need_refresh(tokens)
+        _LOGGER.debug(
+            "My InCharge overview: has_refresh_token=%s, seconds_left=%s, needs_refresh=%s",
+            has_refresh_token,
+            seconds_left,
+            needs_refresh,
+        )
+        if has_refresh_token and needs_refresh:
             try:
                 await self.async_refresh_mycharge_tokens()
             except InChargeApiError as err:
@@ -1529,10 +1549,14 @@ class InChargeClient:
                     "token_refresh_error": str(err),
                     "reauth_required": True,
                     "last_checked": datetime.now(UTC).isoformat(),
-                    "token_seconds_left": self.mycharge_token_seconds_left(
-                        self.mycharge_auth.get("tokens", {})
-                    ),
+                    "token_seconds_left": seconds_left,
                 }
+        elif not has_refresh_token and needs_refresh:
+            _LOGGER.warning(
+                "My InCharge token needs refresh but no refresh_token is stored "
+                "(seconds_left=%s) — re-authentication will be required after expiry",
+                seconds_left,
+            )
         profile = self.mycharge_auth.get("profile") or self.build_mycharge_profile(
             self.mycharge_auth.get("tokens", {})
         )
