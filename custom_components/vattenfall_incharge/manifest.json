@@ -10,5 +10,5 @@
   "issue_tracker": "https://github.com/QuadNL/Vattenfall-InCharge-integration/issues",
   "loggers": ["custom_components.vattenfall_incharge"],
   "requirements": [],
-  "version": "0.5.4-beta"
+  "version": "0.5.4.1-beta"
 }
