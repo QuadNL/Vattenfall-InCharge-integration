@@ -1088,7 +1088,7 @@ class InChargeClient:
         total_seconds = 0.0
         total_cost_incl_vat = 0.0
         cost_matches = 0
-        latest_sessions: list[dict[str, Any]] = []
+        latest_sessions: list[dict[str, Any]] = [{}]
 
         for item in content:
             if not isinstance(item, dict):
@@ -1274,7 +1274,7 @@ class InChargeClient:
             "period": period_key,
             "period_days": None,
             "period_start": self._format_history_time(start),
-            "period_end": self._format_history_end_time(end),
+            "period_end": self._format_history_time(end),
             "account_number": account_number,
             "validated": validated,
             "cancelled": history["cancelled"],
@@ -1523,14 +1523,12 @@ class InChargeClient:
         tokens = self.mycharge_auth.get("tokens", {})
         has_refresh_token = bool(tokens.get("refresh_token"))
         seconds_left = self.mycharge_token_seconds_left(tokens)
-        needs_refresh = self.mycharge_tokens_need_refresh(tokens)
-        _LOGGER.debug(
-            "My InCharge overview: has_refresh_token=%s, seconds_left=%s, needs_refresh=%s",
+        _LOGGER.info(
+            "My InCharge poll: has_refresh_token=%s, token_seconds_left=%s",
             has_refresh_token,
             seconds_left,
-            needs_refresh,
         )
-        if has_refresh_token and needs_refresh:
+        if has_refresh_token:
             try:
                 await self.async_refresh_mycharge_tokens()
             except InChargeApiError as err:
@@ -1551,10 +1549,10 @@ class InChargeClient:
                     "last_checked": datetime.now(UTC).isoformat(),
                     "token_seconds_left": seconds_left,
                 }
-        elif not has_refresh_token and needs_refresh:
+        else:
             _LOGGER.warning(
-                "My InCharge token needs refresh but no refresh_token is stored "
-                "(seconds_left=%s) — re-authentication will be required after expiry",
+                "My InCharge poll: no refresh_token stored (token_seconds_left=%s) — "
+                "session will expire with no way to refresh",
                 seconds_left,
             )
         profile = self.mycharge_auth.get("profile") or self.build_mycharge_profile(
