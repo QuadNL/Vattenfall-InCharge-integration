@@ -360,6 +360,13 @@ class InChargeClient:
                     f"POST refresh failed with {response.status}: {text}"
                 )
             refreshed = json.loads(text)
+        if not refreshed.get("refresh_token"):
+            _LOGGER.warning(
+                "My InCharge token refresh response did not include a new refresh_token "
+                "(source=%s); previous token will be reused — if the server already rotated it, "
+                "the next refresh will fail",
+                source,
+            )
         merged_tokens = {**self.mycharge_auth.get("tokens", {}), **refreshed}
         self.mycharge_auth = {
             **self.mycharge_auth,
@@ -1256,7 +1263,7 @@ class InChargeClient:
             "period": period_key,
             "period_days": None,
             "period_start": self._format_history_time(start),
-            "period_end": self._format_history_time(end),
+            "period_end": self._format_history_end_time(end),
             "account_number": account_number,
             "validated": validated,
             "cancelled": history["cancelled"],
