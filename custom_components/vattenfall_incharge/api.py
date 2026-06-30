@@ -336,12 +336,12 @@ class InChargeClient:
         previous_seconds_left = self.mycharge_token_seconds_left(
             self.mycharge_auth.get("tokens", {})
         )
-        # RFC 6749 §6: only grant_type, client_id and refresh_token are required.
-        # Sending scope or redirect_uri can cause servers to reject the request.
         payload = {
             "grant_type": "refresh_token",
             "client_id": MYCHARGE_CLIENT_ID,
             "refresh_token": refresh_token,
+            "scope": MYCHARGE_SCOPE,
+            "redirect_uri": MYCHARGE_REDIRECT_URI,
         }
         async with self._session.post(
             MYCHARGE_TOKEN_URL,
