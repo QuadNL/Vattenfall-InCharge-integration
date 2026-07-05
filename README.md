@@ -2,6 +2,8 @@
 
 Home Assistant custom integration for Vattenfall InCharge public charging stations and My InCharge account data.
 
+# Vattenfall removed the refreshtoken in the logonsession! So this integration is at the moment pretty useless, unless you want to login manually every hour.
+
 ## Features
 
 - Add public charging stations by charging point name, for example `AB1234` or `XY6789`
