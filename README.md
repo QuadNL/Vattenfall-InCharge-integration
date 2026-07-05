@@ -1,5 +1,9 @@
 # Vattenfall InCharge
 
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
+[![GitHub Release](https://img.shields.io/github/release/QuadNL/Vattenfall-InCharge-integration.svg)](https://github.com/QuadNL/Vattenfall-InCharge-integration/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Home Assistant custom integration for Vattenfall InCharge public charging stations and My InCharge account data.
 
 # Vattenfall removed the refreshtoken in the logonsession! So this integration is at the moment pretty useless, unless you want to login manually every hour.
