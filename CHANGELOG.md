@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.5.4-beta-5
+
+### Fixed
+
+- Fixed My InCharge sessions becoming permanently unrecoverable after ~2 hours. Vattenfall stopped issuing usable `refresh_token`s to the web-portal OAuth client; My InCharge account linking now uses the mobile-app OAuth client instead, whose `refresh_token` grant keeps working when requests present mobile-app-like headers (`User-Agent`, `Apk-CRC`, `Apk-SHA1`).
+- The "Add or update My InCharge account" login link now points to Vattenfall's mobile-app login flow (`nl.nuon.laadpunten://login` callback) instead of the web-portal flow.
+
+### Changed
+
+- Added detailed debug/info logging for My InCharge token exchange, refresh and device-session linking, so request/response activity can be traced in the Home Assistant logs.
+
+### Known limitations
+
+- Charging card visibility (`Charging cards` sensor) may follow whichever device most recently logged into the account (Home Assistant, the mobile app, etc.) — this is Vattenfall backend behavior, not a bug in the integration.
+
 ## v0.5.1
 
 ### Changed

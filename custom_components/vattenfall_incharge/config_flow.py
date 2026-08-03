@@ -158,7 +158,7 @@ class VattenfallInChargePublicStationsConfigFlow(
             self._mycharge_code_verifier, code_challenge = (
                 client.create_mycharge_pkce_pair()
             )
-            self._mycharge_authorize_url = client.build_mycharge_authorize_url(
+            self._mycharge_authorize_url = client.build_mycharge_mobile_authorize_url(
                 self._mycharge_state,
                 code_challenge,
             )
@@ -169,7 +169,7 @@ class VattenfallInChargePublicStationsConfigFlow(
                 return self._create_config_entry()
 
             try:
-                code, returned_state = client.extract_mycharge_code_and_state(
+                code, returned_state = client.extract_mycharge_mobile_code_and_state(
                     callback_url
                 )
                 if returned_state != self._mycharge_state:
@@ -354,7 +354,7 @@ class VattenfallInChargePublicStationsOptionsFlow(config_entries.OptionsFlow):
         if self._mycharge_state is None or self._mycharge_code_verifier is None:
             self._mycharge_state = secrets.token_hex(16)
             self._mycharge_code_verifier, code_challenge = client.create_mycharge_pkce_pair()
-            self._mycharge_authorize_url = client.build_mycharge_authorize_url(
+            self._mycharge_authorize_url = client.build_mycharge_mobile_authorize_url(
                 self._mycharge_state,
                 code_challenge,
             )
@@ -362,7 +362,7 @@ class VattenfallInChargePublicStationsOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             callback_url = str(user_input[CONF_CALLBACK_URL]).strip()
             try:
-                code, returned_state = client.extract_mycharge_code_and_state(callback_url)
+                code, returned_state = client.extract_mycharge_mobile_code_and_state(callback_url)
                 if returned_state != self._mycharge_state:
                     errors["base"] = "invalid_auth_state"
                 else:

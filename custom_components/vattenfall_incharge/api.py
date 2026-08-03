@@ -28,6 +28,9 @@ from .const import (
     MOBILE_BASE_URL,
     MYCHARGE_AUTHORIZE_URL,
     MYCHARGE_CLIENT_ID,
+    MYCHARGE_MOBILE_CLIENT_ID,
+    MYCHARGE_MOBILE_REDIRECT_URI,
+    MYCHARGE_MOBILE_USER_AGENT,
     MYCHARGE_REDIRECT_URI,
     MYCHARGE_SCOPE,
     MYCHARGE_SERVICE_PROVIDER,
@@ -99,6 +102,13 @@ class InChargeClient:
         url = f"{MOBILE_BASE_URL}{path}"
 
         for attempt in range(3 if retry_unauthorized else 1):
+            _LOGGER.debug(
+                "InCharge mobile request: %s %s (device=%s, attempt=%d)",
+                method,
+                path,
+                self.device_id,
+                attempt + 1,
+            )
             async with self._session.request(
                 method,
                 url,
@@ -107,7 +117,18 @@ class InChargeClient:
                 timeout=30,
             ) as response:
                 text = await response.text()
+                _LOGGER.debug(
+                    "InCharge mobile response: %s %s -> %s",
+                    method,
+                    path,
+                    response.status,
+                )
                 if response.status == 401 and retry_unauthorized and attempt < 2:
+                    _LOGGER.debug(
+                        "InCharge mobile request unauthorized, retrying: %s %s",
+                        method,
+                        path,
+                    )
                     await asyncio.sleep(1)
                     continue
                 if response.status >= 400:
@@ -250,6 +271,71 @@ class InChargeClient:
             raise InChargeApiError("No state parameter found in the callback URL.")
         return code, state
 
+    def build_mycharge_mobile_authorize_url(self, state: str, code_challenge: str) -> str:
+        """Build the mobile-app OAuth authorize URL.
+
+        Vattenfall stopped issuing usable refresh tokens to the web-portal
+        OAuth client. The mobile-app client's refresh_token grant keeps
+        working, so My InCharge account linking uses it instead, bound to
+        this integration's own Device-Id (via the scope parameter, matching
+        what the official app sends).
+        """
+        if not self.device_id:
+            raise InChargeApiError("No Device-Id available to build the login URL.")
+        query = {
+            "client_id": MYCHARGE_MOBILE_CLIENT_ID,
+            "state": state,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
+            "response_type": "code",
+            "scope": f"openid {self.device_id}",
+            "prompt": "login",
+            "redirect_uri": MYCHARGE_MOBILE_REDIRECT_URI,
+        }
+        return MYCHARGE_AUTHORIZE_URL + "?" + urlencode(query)
+
+    @staticmethod
+    def normalize_mycharge_mobile_callback_input(callback_input: str) -> str:
+        text = callback_input.strip()
+        match = re.search(r"(nl\.nuon\.laadpunten://login\?[^'\"]+)", text)
+        if match:
+            return match.group(1)
+        return text
+
+    @staticmethod
+    def extract_mycharge_mobile_code_and_state(callback_url: str) -> tuple[str, str]:
+        from urllib.parse import parse_qs, urlparse
+
+        parsed = urlparse(
+            InChargeClient.normalize_mycharge_mobile_callback_input(callback_url)
+        )
+        params = parse_qs(parsed.query)
+        code = params.get("code", [""])[0]
+        state = params.get("state", [""])[0]
+        if not code:
+            raise InChargeApiError("No code parameter found in the callback URL.")
+        if not state:
+            raise InChargeApiError("No state parameter found in the callback URL.")
+        return code, state
+
+    def _mycharge_mobile_token_headers(self) -> dict[str, str]:
+        """Headers that make the OAuth token endpoint treat us as the mobile app.
+
+        Without these, the token endpoint still succeeds but omits
+        refresh_token entirely (observed for both the web and mobile OAuth
+        clients). Sending mobile-app-shaped headers on the mobile client's
+        token calls keeps refresh_token issuance and the refresh_token grant
+        itself working.
+        """
+        return {
+            "Accept": "application/json",
+            "Accept-Encoding": "gzip",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": MYCHARGE_MOBILE_USER_AGENT,
+            "Apk-CRC": str(self.apk_crc),
+            "Apk-SHA1": self.apk_sha1,
+        }
+
     @staticmethod
     def decode_jwt_payload(token: str) -> dict[str, Any]:
         parts = token.split(".")
@@ -301,33 +387,62 @@ class InChargeClient:
             "expires_at": payload.get("exp"),
         }
 
+    async def _async_link_mycharge_mobile_account(self, tokens: dict[str, Any]) -> None:
+        """Link My InCharge OAuth tokens to this device's X-Token session.
+
+        Mirrors what the official app does right after login (POST
+        /emobility/login). After this, ordinary data calls only need
+        Device-Id + X-Token; the OAuth id/access/refresh tokens are not
+        used again until the next refresh cycle.
+        """
+        payload = {
+            "access_token": tokens.get("access_token"),
+            "refresh_token": tokens.get("refresh_token"),
+            "scope": tokens.get("scope"),
+            "id_token": tokens.get("id_token"),
+            "token_type": tokens.get("token_type"),
+            "expires_in": int(tokens.get("expires_in") or 0),
+        }
+        await self._request("POST", "login", json_body=payload)
+        _LOGGER.info(
+            "My InCharge device session linked for device %s (has_refresh_token=%s)",
+            self.device_id,
+            bool(tokens.get("refresh_token")),
+        )
+
     async def async_exchange_mycharge_code(
         self, code: str, code_verifier: str
     ) -> dict[str, Any]:
+        _LOGGER.info("My InCharge: exchanging authorization code for tokens")
         payload = {
             "grant_type": "authorization_code",
-            "client_id": MYCHARGE_CLIENT_ID,
+            "client_id": MYCHARGE_MOBILE_CLIENT_ID,
             "code": code,
-            "redirect_uri": MYCHARGE_REDIRECT_URI,
+            "redirect_uri": MYCHARGE_MOBILE_REDIRECT_URI,
             "code_verifier": code_verifier,
         }
         async with self._session.post(
             MYCHARGE_TOKEN_URL,
-            headers={
-                "Accept": "application/json",
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Origin": "https://myincharge.vattenfall.com",
-                "Referer": "https://myincharge.vattenfall.com/",
-            },
+            headers=self._mycharge_mobile_token_headers(),
             data=payload,
             timeout=30,
         ) as response:
             text = await response.text()
             if response.status >= 400:
+                _LOGGER.warning(
+                    "My InCharge: token exchange failed with HTTP %s", response.status
+                )
                 raise InChargeApiError(
                     f"POST token exchange failed with {response.status}: {text}"
                 )
-            return json.loads(text)
+            tokens = json.loads(text)
+        _LOGGER.info(
+            "My InCharge: token exchange succeeded (has_refresh_token=%s, expires_in=%s)",
+            bool(tokens.get("refresh_token")),
+            tokens.get("expires_in"),
+        )
+        await self._async_link_mycharge_mobile_account(tokens)
+        return tokens
 
     async def async_refresh_mycharge_tokens(self, *, source: str = "automatic") -> dict[str, Any]:
         refresh_token = self.mycharge_auth.get("tokens", {}).get("refresh_token")
@@ -336,31 +451,43 @@ class InChargeClient:
         previous_seconds_left = self.mycharge_token_seconds_left(
             self.mycharge_auth.get("tokens", {})
         )
+        _LOGGER.info(
+            "My InCharge: refreshing tokens (source=%s, previous_seconds_left=%s)",
+            source,
+            previous_seconds_left,
+        )
         payload = {
             "grant_type": "refresh_token",
-            "client_id": MYCHARGE_CLIENT_ID,
+            "client_id": MYCHARGE_MOBILE_CLIENT_ID,
             "refresh_token": refresh_token,
-            "scope": MYCHARGE_SCOPE,
-            "redirect_uri": MYCHARGE_REDIRECT_URI,
         }
         async with self._session.post(
             MYCHARGE_TOKEN_URL,
-            headers={
-                "Accept": "application/json",
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Origin": "https://myincharge.vattenfall.com",
-                "Referer": "https://myincharge.vattenfall.com/",
-            },
+            headers=self._mycharge_mobile_token_headers(),
             data=payload,
             timeout=30,
         ) as response:
             text = await response.text()
             if response.status >= 400:
+                _LOGGER.warning(
+                    "My InCharge: token refresh failed with HTTP %s (source=%s): %s",
+                    response.status,
+                    source,
+                    text,
+                )
                 raise InChargeApiError(
                     f"POST refresh failed with {response.status}: {text}"
                 )
             refreshed = json.loads(text)
         merged_tokens = {**self.mycharge_auth.get("tokens", {}), **refreshed}
+        try:
+            await self._async_link_mycharge_mobile_account(merged_tokens)
+        except InChargeApiError as err:
+            _LOGGER.warning(
+                "My InCharge token refresh succeeded but re-linking the "
+                "device session failed: %s",
+                err,
+            )
         self.mycharge_auth = {
             **self.mycharge_auth,
             "tokens": merged_tokens,
