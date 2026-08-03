@@ -13,7 +13,6 @@ Home Assistant custom integration for Vattenfall InCharge public charging statio
 - Expose My InCharge dashboard widgets such as average kWh per session and charging costs
 - Expose My InCharge charging-history counts for validated and cancelled sessions
 - Expose My InCharge charging-card counts, pending assignments and per-card sensors when cards are present
-- Download My InCharge charging-history reports as CSV or XLSX from Home Assistant
 
 Vattenfall InCharge stations are fully supported. Other charging networks exposed through the same app API are best effort and may return less consistent names or grouping.
 
@@ -67,9 +66,17 @@ The integration polls public charging stations every 5 minutes. My InCharge acco
 
 ## My InCharge account
 
-The My InCharge account flow uses the browser-based Vattenfall login and OTP flow.
+The My InCharge account flow uses the browser-based Vattenfall login and OTP flow, followed by the mobile-app OAuth callback (Vattenfall stopped issuing usable refresh tokens to the web-portal OAuth client, so the integration links accounts through the same client the official mobile app uses).
 
-After login, Home Assistant stores the returned tokens in the config entry storage. The integration refreshes tokens when they are close to expiry and writes refreshed tokens back to Home Assistant storage.
+Because the final step redirects to a `nl.nuon.laadpunten://login` link that desktop browsers cannot open, the setup flow asks you to copy that link manually:
+
+1. Use a private/incognito browser window and open DevTools (F12) with the Network tab open before you start.
+2. Complete the Vattenfall login and OTP steps as shown in the Home Assistant setup flow.
+3. Right after entering the OTP code, filter the Network tab on `authorize?` and open the last matching request.
+4. Copy the `location` response header value — it starts with `nl.nuon.laadpunten://login?code=...`.
+5. Paste that whole link into the Home Assistant setup flow. This link expires quickly (well under a minute), so copy and paste it right away.
+
+After login, Home Assistant stores the returned tokens in the config entry storage. The integration refreshes tokens automatically when they are close to expiry and writes refreshed tokens back to Home Assistant storage. Use the `vattenfall_incharge.refresh_my_incharge_tokens` service to manually trigger a refresh for testing.
 
 Current My InCharge entities:
 
@@ -86,52 +93,6 @@ Current My InCharge entities:
 - `Cancelled sessions this month`
 - `Charging cards`
 - one `My InCharge card ...` sensor per returned charging card
-
-## Report downloads
-
-The service `vattenfall_incharge.download_my_incharge_report` downloads a My InCharge charging-history report and creates a Home Assistant notification with a download link.
-
-Supported formats:
-
-- `csv`
-- `xlsx`
-
-Supported periods:
-
-- `this_week`
-- `last_7_days`
-- `last_month`
-- `last_30_days`
-- `this_month`
-- `last_12_months`
-- `this_year`
-- `last_year`
-- `custom`
-
-Example service call:
-
-```yaml
-service: vattenfall_incharge.download_my_incharge_report
-data:
-  period: this_month
-  format: xlsx
-```
-
-Example dashboard button:
-
-```yaml
-type: button
-name: Download My InCharge report
-icon: mdi:file-download-outline
-tap_action:
-  action: call-service
-  service: vattenfall_incharge.download_my_incharge_report
-  data:
-    period: this_month
-    format: xlsx
-```
-
-Report download requests are rate limited to once per 30 seconds per My InCharge account. If a new request is made too soon, Home Assistant shows a notification with the remaining wait time and no request is sent to Vattenfall.
 
 ## Entities
 

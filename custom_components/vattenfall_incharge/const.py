@@ -51,7 +51,6 @@ DATA_COORDINATOR = "coordinator"
 DATA_SKIP_RELOAD_ONCE = "skip_reload_once"
 
 SERVICE_REFRESH_MYCHARGE_TOKENS = "refresh_my_incharge_tokens"
-SERVICE_DOWNLOAD_MYCHARGE_REPORT = "download_my_incharge_report"
 NOTIFICATION_MYCHARGE_AUTH = f"{DOMAIN}_my_incharge_authentication_required"
 
 PLATFORMS = ["sensor"]

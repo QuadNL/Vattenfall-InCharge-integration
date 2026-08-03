@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.6.0
+
+### Fixed
+
+- My InCharge sessions no longer become permanently unrecoverable after ~2 hours. Vattenfall stopped issuing usable `refresh_token`s to the web-portal OAuth client; My InCharge account linking now uses the mobile-app OAuth client instead, whose `refresh_token` grant keeps working when requests present mobile-app-like headers (`User-Agent`, `Apk-CRC`, `Apk-SHA1`).
+
+### Removed
+
+- Removed the My InCharge charging-history report download feature (`download_my_incharge_report` service and its CSV/XLSX export). The report file endpoint does not reliably return content for the mobile OAuth client used for account linking, and the feature was not essential to the integration. Charging-history totals and costs remain available through the existing sensors.
+
 ## v0.5.4-beta11
 
 ### Fixed
