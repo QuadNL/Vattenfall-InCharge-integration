@@ -3,23 +3,14 @@
 from __future__ import annotations
 
 import logging
-import html
-from pathlib import Path
-import re
-import secrets
-import time
 
-from aiohttp import web
 import voluptuous as vol
 
-from homeassistant.components.http import HomeAssistantView
-from homeassistant.components.persistent_notification import async_create
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.network import get_url
 
 from .api import InChargeApiError, InChargeClient
 from .const import (
@@ -34,121 +25,18 @@ from .const import (
     DATA_SKIP_RELOAD_ONCE,
     DOMAIN,
     PLATFORMS,
-    SERVICE_DOWNLOAD_MYCHARGE_REPORT,
     SERVICE_REFRESH_MYCHARGE_TOKENS,
     CONF_X_TOKEN,
 )
 from .coordinator import InChargeDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
-DATA_REPORT_DOWNLOADS = "report_downloads"
-DATA_REPORT_DOWNLOAD_RATE_LIMIT = "report_download_rate_limit"
-REPORT_DOWNLOAD_MIN_INTERVAL = 30
 
 SERVICE_REFRESH_MYCHARGE_TOKENS_SCHEMA = vol.Schema(
     {
         vol.Optional("entry_id"): str,
     }
 )
-SERVICE_DOWNLOAD_MYCHARGE_REPORT_SCHEMA = vol.Schema(
-    {
-        vol.Optional("entry_id"): str,
-        vol.Optional("format", default="csv"): vol.In(["csv", "xlsx"]),
-        vol.Optional("period", default="this_month"): vol.In(
-            [
-                "this_week",
-                "last_7_days",
-                "last_month",
-                "last_30_days",
-                "this_month",
-                "last_12_months",
-                "this_year",
-                "last_year",
-                "custom",
-            ]
-        ),
-        vol.Optional("start_date"): str,
-        vol.Optional("end_date"): str,
-        vol.Optional("filename"): str,
-    }
-)
-
-
-def _safe_report_filename(value: str) -> str:
-    sanitized = re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("._")
-    return sanitized or "my_incharge_report"
-
-
-def _report_download_url(hass: HomeAssistant, report_id: str) -> str:
-    relative_url = f"/api/{DOMAIN}/reports/{report_id}"
-    try:
-        base_url = get_url(hass, allow_internal=True, allow_external=True)
-    except Exception:  # pragma: no cover - fallback when HA has no URL configured
-        return relative_url
-    return f"{base_url.rstrip('/')}{relative_url}"
-
-
-def _report_content_type(filename: str) -> str:
-    suffix = Path(filename).suffix.lower()
-    if suffix == ".csv":
-        return "text/csv"
-    if suffix == ".xlsx":
-        return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    return "application/octet-stream"
-
-
-def _report_download_link(filename: str, url: str) -> str:
-    escaped_url = html.escape(url, quote=True)
-    escaped_name = html.escape(filename, quote=True)
-    return (
-        f'<a href="{escaped_url}" download="{escaped_name}" '
-        f'target="_blank" rel="noreferrer">Download report</a>'
-    )
-
-
-def _mycharge_account_number(client: InChargeClient, fallback: str) -> str:
-    profile = client.mycharge_auth.get("profile") or {}
-    account_number = profile.get("account_number")
-    if account_number:
-        return str(account_number)
-    return fallback
-
-
-class InChargeReportDownloadView(HomeAssistantView):
-    """Download My InCharge reports saved by the integration."""
-
-    url = f"/api/{DOMAIN}/reports/{{report_id}}"
-    name = f"api:{DOMAIN}:reports"
-    requires_auth = False
-
-    def __init__(self, hass: HomeAssistant) -> None:
-        self.hass = hass
-
-    async def get(self, request: web.Request, report_id: str) -> web.StreamResponse:
-        """Return a saved report as a browser download."""
-        if not re.fullmatch(r"[A-Za-z0-9_-]{24,}", report_id):
-            raise web.HTTPNotFound()
-
-        report = self.hass.data.get(DOMAIN, {}).get(DATA_REPORT_DOWNLOADS, {}).get(
-            report_id
-        )
-        if not report:
-            raise web.HTTPNotFound()
-
-        path = Path(report["path"])
-        if not path.is_file():
-            raise web.HTTPNotFound()
-
-        filename = report["filename"]
-        body = await self.hass.async_add_executor_job(path.read_bytes)
-        return web.Response(
-            body=body,
-            content_type=report.get("content_type") or _report_content_type(filename),
-            headers={
-                "Content-Disposition": f'attachment; filename="{filename}"',
-                "Content-Length": str(len(body)),
-            },
-        )
 
 
 def _mycharge_account_key(entry: ConfigEntry) -> str | None:
@@ -244,11 +132,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up InCharge from a config entry."""
     await async_setup_services(hass)
 
+    mycharge_auth = entry.options.get(CONF_MYCHARGE)
+    _LOGGER.info(
+        "Setting up InCharge entry %s (My InCharge account: %s)",
+        entry.entry_id,
+        "present" if mycharge_auth else "not configured",
+    )
+
     client = InChargeClient(
         hass,
         device_id=entry.data[CONF_DEVICE_ID],
         x_token=entry.data[CONF_X_TOKEN],
-        mycharge_auth=entry.options.get(CONF_MYCHARGE),
+        mycharge_auth=mycharge_auth,
         apk_sha1=entry.data[CONF_APK_SHA1],
         apk_crc=entry.data[CONF_APK_CRC],
     )
@@ -269,14 +164,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_setup_services(hass: HomeAssistant) -> None:
     """Register integration services."""
     hass.data.setdefault(DOMAIN, {})
-    if not hass.data[DOMAIN].get("report_download_view_registered"):
-        hass.http.register_view(InChargeReportDownloadView(hass))
-        hass.data[DOMAIN]["report_download_view_registered"] = True
 
-    if (
-        hass.services.has_service(DOMAIN, SERVICE_REFRESH_MYCHARGE_TOKENS)
-        and hass.services.has_service(DOMAIN, SERVICE_DOWNLOAD_MYCHARGE_REPORT)
-    ):
+    if hass.services.has_service(DOMAIN, SERVICE_REFRESH_MYCHARGE_TOKENS):
         return
 
     async def refresh_mycharge_tokens(call: ServiceCall) -> None:
@@ -319,144 +208,12 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         if refreshed == 0:
             raise HomeAssistantError("No configured My InCharge account found to refresh")
 
-    async def download_mycharge_report(call: ServiceCall) -> None:
-        entry_id = call.data.get("entry_id")
-        report_format = call.data["format"]
-        period = call.data["period"]
-        start_date = call.data.get("start_date")
-        end_date = call.data.get("end_date")
-        custom_filename = call.data.get("filename")
-
-        entries = [
-            entry
-            for entry in hass.config_entries.async_entries(DOMAIN)
-            if not entry_id or entry.entry_id == entry_id
-        ]
-        if entry_id and not entries:
-            raise HomeAssistantError(f"No Vattenfall InCharge entry found for {entry_id}")
-
-        reports: list[tuple[str, str]] = []
-        skipped_by_rate_limit = 0
-        for entry in entries:
-            entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
-            if not entry_data:
-                continue
-            client: InChargeClient = entry_data[DATA_CLIENT]
-            if not client.mycharge_auth:
-                continue
-            account_number = _mycharge_account_number(client, entry.entry_id)
-            rate_limits = hass.data[DOMAIN].setdefault(
-                DATA_REPORT_DOWNLOAD_RATE_LIMIT, {}
-            )
-            now = time.monotonic()
-            last_request = rate_limits.get(account_number)
-            if last_request is not None:
-                seconds_left = REPORT_DOWNLOAD_MIN_INTERVAL - (now - last_request)
-                if seconds_left > 0:
-                    wait_seconds = int(seconds_left) + 1
-                    async_create(
-                        hass,
-                        (
-                            "A My InCharge report download was requested too soon.\n\n"
-                            f"Please wait {wait_seconds} seconds before requesting "
-                            "a new report."
-                        ),
-                        title="Vattenfall InCharge report download delayed",
-                        notification_id=f"{DOMAIN}_my_incharge_report_rate_limit",
-                    )
-                    skipped_by_rate_limit += 1
-                    continue
-            rate_limits[account_number] = now
-
-            try:
-                tokens = client.mycharge_auth.get("tokens", {})
-                if client.mycharge_tokens_need_refresh(tokens):
-                    await client.async_refresh_mycharge_tokens(source="report_download")
-                    entry_data[DATA_SKIP_RELOAD_ONCE] = True
-                    hass.config_entries.async_update_entry(
-                        entry,
-                        options={**entry.options, CONF_MYCHARGE: client.mycharge_auth},
-                    )
-
-                report = await client.async_download_mycharge_charging_history_report(
-                    report_format=report_format,
-                    period_key=period,
-                    start_date=start_date,
-                    end_date=end_date,
-                )
-            except InChargeApiError as err:
-                _LOGGER.warning("My InCharge report download failed: %s", err)
-                raise HomeAssistantError(f"My InCharge report download failed: {err}") from err
-
-            extension = report["extension"]
-            account_number = str(report["account_number"])
-            if custom_filename:
-                filename = _safe_report_filename(custom_filename)
-                if not filename.lower().endswith(f".{extension}"):
-                    filename = f"{filename}.{extension}"
-            else:
-                start_label = str(report["period_start"]).split("T", maxsplit=1)[0]
-                end_label = str(report["period_end"]).split("T", maxsplit=1)[0]
-                filename = _safe_report_filename(
-                    f"my_incharge_{account_number}_{period}_{start_label}_{end_label}"
-                )
-                filename = f"{filename}.{extension}"
-
-            report_id = secrets.token_urlsafe(24)
-            report_dir = Path(hass.config.path(DOMAIN, "reports"))
-            path = report_dir / f"{report_id}.{extension}"
-
-            def write_report() -> None:
-                report_dir.mkdir(parents=True, exist_ok=True)
-                path.write_bytes(report["content"])
-
-            await hass.async_add_executor_job(write_report)
-            hass.data[DOMAIN].setdefault(DATA_REPORT_DOWNLOADS, {})[report_id] = {
-                "path": str(path),
-                "filename": filename,
-                "content_type": report.get("content_type")
-                or _report_content_type(filename),
-            }
-            reports.append((filename, _report_download_url(hass, report_id)))
-
-        if not reports and skipped_by_rate_limit:
-            return
-        if not reports:
-            raise HomeAssistantError("No configured My InCharge account found")
-
-        if len(reports) == 1:
-            filename, url = reports[0]
-            message = (
-                f"Report saved as `{filename}`.\n\n"
-                f"{_report_download_link(filename, url)}"
-            )
-        else:
-            links = "\n".join(
-                f"- {_report_download_link(filename, url)} `{filename}`"
-                for filename, url in reports
-            )
-            message = f"Reports are ready:\n\n{links}"
-        async_create(
-            hass,
-            message,
-            title="Vattenfall InCharge report downloaded",
-            notification_id=f"{DOMAIN}_my_incharge_report_download",
-        )
-
-    if not hass.services.has_service(DOMAIN, SERVICE_REFRESH_MYCHARGE_TOKENS):
-        hass.services.async_register(
-            DOMAIN,
-            SERVICE_REFRESH_MYCHARGE_TOKENS,
-            refresh_mycharge_tokens,
-            schema=SERVICE_REFRESH_MYCHARGE_TOKENS_SCHEMA,
-        )
-    if not hass.services.has_service(DOMAIN, SERVICE_DOWNLOAD_MYCHARGE_REPORT):
-        hass.services.async_register(
-            DOMAIN,
-            SERVICE_DOWNLOAD_MYCHARGE_REPORT,
-            download_mycharge_report,
-            schema=SERVICE_DOWNLOAD_MYCHARGE_REPORT_SCHEMA,
-        )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_REFRESH_MYCHARGE_TOKENS,
+        refresh_mycharge_tokens,
+        schema=SERVICE_REFRESH_MYCHARGE_TOKENS_SCHEMA,
+    )
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -471,8 +228,13 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload config entry on update."""
     entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     if entry_data and entry_data.pop(DATA_SKIP_RELOAD_ONCE, False):
-        _LOGGER.debug("Skipping reload after internal My InCharge token update")
+        _LOGGER.info("Skipping reload after internal My InCharge token update")
         return
+    _LOGGER.warning(
+        "Reloading InCharge config entry %s (update listener fired without skip flag — "
+        "this may reset the My InCharge session if tokens were not yet persisted)",
+        entry.entry_id,
+    )
     await hass.config_entries.async_reload(entry.entry_id)
 
 

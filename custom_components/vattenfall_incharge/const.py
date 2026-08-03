@@ -14,6 +14,12 @@ MOBILE_BASE_URL = "https://businessspecificapimanglobal.azure-api.net/emobility/
 MOBILE_APIM_KEY = "12c7d772faa84b92a8f13a22d7bd8638"
 
 # Public My InCharge portal OAuth/API compatibility values.
+# NOTE: Vattenfall stopped issuing usable refresh tokens to the web-portal
+# OAuth client (MYCHARGE_CLIENT_ID below) around 2026-07. My InCharge account
+# linking now uses the mobile-app OAuth client instead (MYCHARGE_MOBILE_*),
+# whose refresh_token grant keeps working as long as requests present
+# mobile-app-like headers (User-Agent/Apk-CRC/Apk-SHA1). The web client id is
+# kept only for reference / potential future use.
 MYCHARGE_AUTHORIZE_URL = "https://accounts.vattenfall.com/iamng/emob/oauth2/authorize"
 MYCHARGE_TOKEN_URL = "https://accounts.vattenfall.com/iamng/emob/oauth2/token"
 MYCHARGE_CLIENT_ID = "Ac5BFlCwsq4AgqvwaqBYv5uVLpJV"
@@ -23,6 +29,12 @@ MYCHARGE_TENANT_DOMAIN = "int.incharge"
 MYCHARGE_SERVICE_PROVIDER = "ICSP"
 PORTAL_APIM_KEY = "7685786eb9544d97923b0f01ac1b45d8"
 PORTAL_BASE_URL = "https://businessspecificapimanglobal.azure-api.net"
+
+# My InCharge account linking via the mobile-app OAuth client. The scope's
+# second term must be the integration's own Device-Id (see InChargeClient).
+MYCHARGE_MOBILE_CLIENT_ID = "aFv3j0akvDjppTBMp6vEFHpmABep"
+MYCHARGE_MOBILE_REDIRECT_URI = "nl.nuon.laadpunten://login"
+MYCHARGE_MOBILE_USER_AGENT = "okhttp/5.1.0"
 
 CONF_APK_CRC = "apk_crc"
 CONF_APK_SHA1 = "apk_sha1"
@@ -39,7 +51,6 @@ DATA_COORDINATOR = "coordinator"
 DATA_SKIP_RELOAD_ONCE = "skip_reload_once"
 
 SERVICE_REFRESH_MYCHARGE_TOKENS = "refresh_my_incharge_tokens"
-SERVICE_DOWNLOAD_MYCHARGE_REPORT = "download_my_incharge_report"
 NOTIFICATION_MYCHARGE_AUTH = f"{DOMAIN}_my_incharge_authentication_required"
 
 PLATFORMS = ["sensor"]
