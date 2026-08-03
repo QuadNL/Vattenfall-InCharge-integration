@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.4-beta8
+
+### Fixed
+
+- Fixed `download_my_incharge_report` failing with "Report file was not ready before the timeout" for reports that take longer than 30 seconds for Vattenfall to generate. The polling window is now up to 120 seconds, with debug logging per attempt.
+
 ## v0.5.4-beta7
 
 ### Changed

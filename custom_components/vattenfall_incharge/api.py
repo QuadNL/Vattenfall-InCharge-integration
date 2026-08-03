@@ -1029,7 +1029,9 @@ class InChargeClient:
         else:
             download_url = None
 
-        for _ in range(15):
+        max_attempts = 40
+        poll_interval = 3
+        for attempt in range(max_attempts):
             if download_url:
                 break
             if not file_path:
@@ -1050,7 +1052,13 @@ class InChargeClient:
                         notification_url, account_number
                     )
                 else:
-                    await asyncio.sleep(2)
+                    _LOGGER.debug(
+                        "My InCharge report not ready yet (attempt %d/%d, no "
+                        "notification found)",
+                        attempt + 1,
+                        max_attempts,
+                    )
+                    await asyncio.sleep(poll_interval)
                     continue
 
             file_status, file_headers, _ = await self._portal_request_raw(
@@ -1068,10 +1076,21 @@ class InChargeClient:
                 raise InChargeApiError(
                     f"Report file request returned unexpected status {file_status}"
                 )
-            await asyncio.sleep(2)
+            _LOGGER.debug(
+                "My InCharge report file not ready yet (attempt %d/%d, status %s)",
+                attempt + 1,
+                max_attempts,
+                file_status,
+            )
+            await asyncio.sleep(poll_interval)
 
         if not download_url:
-            raise InChargeApiError("Report file was not ready before the timeout")
+            raise InChargeApiError(
+                f"Report file was not ready after {max_attempts * poll_interval}s "
+                "timeout. Vattenfall may still be generating it in the background "
+                "(check the My InCharge portal); try the download service again "
+                "in a minute."
+            )
 
         async with self._session.get(download_url, timeout=60) as response:
             report_content = await response.read()
