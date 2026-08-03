@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.5.4-beta5
+## v0.5.4-beta6
 
 ### Fixed
 
