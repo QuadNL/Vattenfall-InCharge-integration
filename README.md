@@ -19,6 +19,14 @@ Vattenfall InCharge stations are fully supported. Other charging networks expose
 
 ## Installation
 
+Add this repository to your HACS with the following button:
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=QuadNL&repository=Vattenfall-InCharge-integration&category=integration)
+
+Install this integration with the following button:
+
+[![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=vattenfall_incharge)
+
 ### HACS custom repository
 
 1. Open HACS.

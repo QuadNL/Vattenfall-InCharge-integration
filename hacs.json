@@ -1,8 +1,0 @@
-{
-  "name": "Vattenfall InCharge",
-  "domains": ["vattenfall_incharge"],
-  "homeassistant": "2025.1.0",
-  "content_in_root": false,
-  "render_readme": true,
-  "country": "NL"
-}

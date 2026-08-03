@@ -436,11 +436,15 @@ class InChargeClient:
                     f"POST token exchange failed with {response.status}: {text}"
                 )
             tokens = json.loads(text)
-        _LOGGER.info(
-            "My InCharge: token exchange succeeded (has_refresh_token=%s, expires_in=%s)",
-            bool(tokens.get("refresh_token")),
-            tokens.get("expires_in"),
-        )
+        if not tokens.get("refresh_token"):
+            _LOGGER.warning(
+                "My InCharge code exchange response did not include a refresh_token; "
+                "session will expire after the initial access token lifetime with no way to refresh"
+            )
+        else:
+            _LOGGER.info(
+                "My InCharge code exchange successful; refresh_token present — persistent sessions enabled"
+            )
         await self._async_link_mycharge_mobile_account(tokens)
         return tokens
 
@@ -479,6 +483,13 @@ class InChargeClient:
                     f"POST refresh failed with {response.status}: {text}"
                 )
             refreshed = json.loads(text)
+        if not refreshed.get("refresh_token"):
+            _LOGGER.warning(
+                "My InCharge token refresh response did not include a new refresh_token "
+                "(source=%s); previous token will be reused — if the server already rotated it, "
+                "the next refresh will fail",
+                source,
+            )
         merged_tokens = {**self.mycharge_auth.get("tokens", {}), **refreshed}
         try:
             await self._async_link_mycharge_mobile_account(merged_tokens)
@@ -1197,7 +1208,7 @@ class InChargeClient:
         total_seconds = 0.0
         total_cost_incl_vat = 0.0
         cost_matches = 0
-        latest_sessions: list[dict[str, Any]] = []
+        latest_sessions: list[dict[str, Any]] = [{}]
 
         for item in content:
             if not isinstance(item, dict):
@@ -1457,7 +1468,7 @@ class InChargeClient:
             **summary,
             "period_days": period_days,
             "period_start": self._format_history_time(start),
-            "period_end": self._format_history_time(end),
+            "period_end": self._format_history_end_time(end),
             "account_number": account_number,
         }
 
@@ -1630,7 +1641,14 @@ class InChargeClient:
 
     async def async_get_mycharge_overview(self) -> dict[str, Any]:
         tokens = self.mycharge_auth.get("tokens", {})
-        if tokens.get("refresh_token") and self.mycharge_tokens_need_refresh(tokens):
+        has_refresh_token = bool(tokens.get("refresh_token"))
+        seconds_left = self.mycharge_token_seconds_left(tokens)
+        _LOGGER.info(
+            "My InCharge poll: has_refresh_token=%s, token_seconds_left=%s",
+            has_refresh_token,
+            seconds_left,
+        )
+        if has_refresh_token:
             try:
                 await self.async_refresh_mycharge_tokens()
             except InChargeApiError as err:
@@ -1649,10 +1667,14 @@ class InChargeClient:
                     "token_refresh_error": str(err),
                     "reauth_required": True,
                     "last_checked": datetime.now(UTC).isoformat(),
-                    "token_seconds_left": self.mycharge_token_seconds_left(
-                        self.mycharge_auth.get("tokens", {})
-                    ),
+                    "token_seconds_left": seconds_left,
                 }
+        else:
+            _LOGGER.warning(
+                "My InCharge poll: no refresh_token stored (token_seconds_left=%s) — "
+                "session will expire with no way to refresh",
+                seconds_left,
+            )
         profile = self.mycharge_auth.get("profile") or self.build_mycharge_profile(
             self.mycharge_auth.get("tokens", {})
         )

@@ -244,11 +244,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up InCharge from a config entry."""
     await async_setup_services(hass)
 
+    mycharge_auth = entry.options.get(CONF_MYCHARGE)
+    _LOGGER.info(
+        "Setting up InCharge entry %s (My InCharge account: %s)",
+        entry.entry_id,
+        "present" if mycharge_auth else "not configured",
+    )
+
     client = InChargeClient(
         hass,
         device_id=entry.data[CONF_DEVICE_ID],
         x_token=entry.data[CONF_X_TOKEN],
-        mycharge_auth=entry.options.get(CONF_MYCHARGE),
+        mycharge_auth=mycharge_auth,
         apk_sha1=entry.data[CONF_APK_SHA1],
         apk_crc=entry.data[CONF_APK_CRC],
     )
@@ -471,8 +478,13 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload config entry on update."""
     entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     if entry_data and entry_data.pop(DATA_SKIP_RELOAD_ONCE, False):
-        _LOGGER.debug("Skipping reload after internal My InCharge token update")
+        _LOGGER.info("Skipping reload after internal My InCharge token update")
         return
+    _LOGGER.warning(
+        "Reloading InCharge config entry %s (update listener fired without skip flag — "
+        "this may reset the My InCharge session if tokens were not yet persisted)",
+        entry.entry_id,
+    )
     await hass.config_entries.async_reload(entry.entry_id)
 
 
