@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.6.1
+
+### Added
+
+- Added an MIT `LICENSE` file at the repository root, required for the HACS default catalog submission.
+
 ## v0.6.0
 
 ### Fixed
