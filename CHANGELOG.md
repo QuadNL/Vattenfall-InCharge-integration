@@ -1,11 +1,5 @@
 # Changelog
 
-## v0.5.4-beta9
-
-### Fixed
-
-- Fixed `download_my_incharge_report` still timing out even when the report was generated almost instantly on Vattenfall's side (visible in the My InCharge portal within a second). The old fallback relied on a separate live-notifications endpoint to detect readiness, which was not reliably returning a match. Now re-polls the same export endpoint directly first (every 1.5s, up to ~22s), which picks up the ready report immediately; the notification-based check remains as a fallback for slower report generation.
-
 ## v0.5.4-beta8
 
 ### Fixed

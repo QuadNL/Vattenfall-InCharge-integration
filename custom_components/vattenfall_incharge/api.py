@@ -1029,121 +1029,67 @@ class InChargeClient:
         else:
             download_url = None
 
-        # Primary strategy: the report is typically ready within a second or
-        # two, so simply re-poll the same export endpoint - it returns 200
-        # with the content directly once ready, or a Location/Content-Location
-        # header pointing at the download.
-        direct_attempts = 15
-        direct_interval = 1.5
-        report_content: bytes | None = None
-        report_content_type: str | None = None
-        for attempt in range(direct_attempts):
-            await asyncio.sleep(direct_interval)
-            retry_status, retry_headers, retry_content = await self._portal_request_raw(
-                "GET",
-                history_path,
-                bearer_token=id_token,
-                accept=accept,
-            )
-            if retry_status == 200 and retry_content:
-                report_content = retry_content
-                report_content_type = self._header(retry_headers, "Content-Type")
-                break
-            retry_location = self._header(retry_headers, "Location") or self._header(
-                retry_headers, "Content-Location"
-            )
-            if retry_location and self._is_blob_location(retry_location):
-                download_url = retry_location
-                break
-            if retry_location and not blob_location:
-                blob_location = retry_location
-                file_path = self._report_file_path_from_location(
-                    retry_location, account_number
-                )
-            _LOGGER.debug(
-                "My InCharge report not ready yet (direct poll attempt %d/%d, "
-                "status %s)",
-                attempt + 1,
-                direct_attempts,
-                retry_status,
-            )
-
-        if report_content is not None:
-            return {
-                "account_number": account_number,
-                "period": period_key,
-                "period_start": self._format_history_time(start),
-                "period_end": self._format_history_end_time(end),
-                "format": format_key,
-                "extension": extension,
-                "content": report_content,
-                "content_type": report_content_type,
-            }
-
-        # Fallback: the older notification-based polling, in case the direct
-        # re-poll above never surfaces a location (e.g. for larger reports).
         max_attempts = 40
         poll_interval = 3
-        if not download_url:
-            for attempt in range(max_attempts):
-                if download_url:
-                    break
-                if not file_path:
-                    notification_url = (
-                        await self._async_find_mycharge_report_notification_url(
-                            bearer_token=id_token,
-                            account_number=account_number,
-                            extension=extension,
-                            start=start,
-                            end=end,
-                        )
+        for attempt in range(max_attempts):
+            if download_url:
+                break
+            if not file_path:
+                notification_url = (
+                    await self._async_find_mycharge_report_notification_url(
+                        bearer_token=id_token,
+                        account_number=account_number,
+                        extension=extension,
+                        start=start,
+                        end=end,
                     )
-                    if notification_url:
-                        if self._is_blob_location(notification_url):
-                            download_url = notification_url
-                            break
-                        file_path = self._report_file_path_from_location(
-                            notification_url, account_number
-                        )
-                    else:
-                        _LOGGER.debug(
-                            "My InCharge report not ready yet (fallback attempt "
-                            "%d/%d, no notification found)",
-                            attempt + 1,
-                            max_attempts,
-                        )
-                        await asyncio.sleep(poll_interval)
-                        continue
+                )
+                if notification_url:
+                    if self._is_blob_location(notification_url):
+                        download_url = notification_url
+                        break
+                    file_path = self._report_file_path_from_location(
+                        notification_url, account_number
+                    )
+                else:
+                    _LOGGER.debug(
+                        "My InCharge report not ready yet (attempt %d/%d, no "
+                        "notification found)",
+                        attempt + 1,
+                        max_attempts,
+                    )
+                    await asyncio.sleep(poll_interval)
+                    continue
 
-                file_status, file_headers, _ = await self._portal_request_raw(
-                    "GET",
-                    file_path,
-                    bearer_token=id_token,
+            file_status, file_headers, _ = await self._portal_request_raw(
+                "GET",
+                file_path,
+                bearer_token=id_token,
+            )
+            next_location = self._header(file_headers, "Location") or self._header(
+                file_headers, "Content-Location"
+            )
+            if next_location and self._is_blob_location(next_location):
+                download_url = next_location
+                break
+            if file_status not in (200, 202, 204):
+                raise InChargeApiError(
+                    f"Report file request returned unexpected status {file_status}"
                 )
-                next_location = self._header(file_headers, "Location") or self._header(
-                    file_headers, "Content-Location"
-                )
-                if next_location and self._is_blob_location(next_location):
-                    download_url = next_location
-                    break
-                if file_status not in (200, 202, 204):
-                    raise InChargeApiError(
-                        f"Report file request returned unexpected status {file_status}"
-                    )
-                _LOGGER.debug(
-                    "My InCharge report file not ready yet (fallback attempt "
-                    "%d/%d, status %s)",
-                    attempt + 1,
-                    max_attempts,
-                    file_status,
-                )
-                await asyncio.sleep(poll_interval)
+            _LOGGER.debug(
+                "My InCharge report file not ready yet (attempt %d/%d, status %s)",
+                attempt + 1,
+                max_attempts,
+                file_status,
+            )
+            await asyncio.sleep(poll_interval)
 
         if not download_url:
             raise InChargeApiError(
-                "Report file was not ready before the timeout. Vattenfall may "
-                "still be generating it in the background (check the My "
-                "InCharge portal); try the download service again in a minute."
+                f"Report file was not ready after {max_attempts * poll_interval}s "
+                "timeout. Vattenfall may still be generating it in the background "
+                "(check the My InCharge portal); try the download service again "
+                "in a minute."
             )
 
         async with self._session.get(download_url, timeout=60) as response:
