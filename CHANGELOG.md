@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.5.4-beta10
+
+### Fixed
+
+- Reverted the v0.5.4-beta9 change that re-polled the report export endpoint directly. Confirmed by testing that each `GET` on that endpoint starts a **new** report-generation job on Vattenfall's side rather than checking an existing one, which caused duplicate report-ready notifications. Back to the notification-based polling from beta8 (single export request, then polling `/live-notifications-v2/api/notifications` for readiness), which does not have this side effect.
+
+### Known issue
+
+- `download_my_incharge_report` can still time out ("Report file was not ready before the timeout") even though the report is generated almost instantly and visible in the My InCharge portal. The root cause (the notification-based readiness check not reliably matching) is still being investigated; a real fix needs a safe way to detect readiness without re-triggering report generation.
+
 ## v0.5.4-beta8
 
 ### Fixed
