@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.4-beta7
+
+### Changed
+
+- Clarified the "Add or update My InCharge account" instructions: the mobile-app login callback (`nl.nuon.laadpunten://login`) does not visibly navigate in a desktop browser, so the help text now explains using the browser history (Ctrl+H) to find and copy the callback URL, and warns that it expires quickly.
+
 ## v0.5.4-beta6
 
 ### Fixed

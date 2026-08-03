@@ -17,7 +17,7 @@
       },
       "add_first_mycharge_account": {
         "title": "Add My InCharge account",
-        "description": "Open the My InCharge login URL below in your browser, complete the login and OTP flow, then paste the full final callback URL here. Leave this empty to skip this step and add a My InCharge account later from Configure.\n\n{auth_url}",
+        "description": "Open the My InCharge login URL below in your browser, complete the login and OTP flow, then paste the full final callback URL here. Leave this empty to skip this step and add a My InCharge account later from Configure.\n\nYour browser will NOT visibly navigate to that final URL (it starts with nl.nuon.laadpunten://, which desktop browsers cannot open) and it will not appear in the address bar. To find it: press Ctrl+H to open your browser history right after finishing the OTP step, and copy the most recent entry - it will start with 'nl.nuon.laadpunten://login?code=...'. Paste that whole link below. This link expires quickly (well under a minute), so copy and paste it right away.\n\n{auth_url}",
         "data": {
           "callback_url": "My InCharge callback URL"
         }
