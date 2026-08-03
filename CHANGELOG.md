@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.4-beta11
+
+### Fixed
+
+- Fixed `download_my_incharge_report` matching a stale, already-consumed FILE notification (returning HTTP 204 forever) instead of the fresh one for the current request, when multiple near-identical "sessions.csv" notifications with the same name/date labels exist. The notification lookup now only considers notifications created after the report was requested.
+
 ## v0.5.4-beta10
 
 ### Fixed

@@ -896,6 +896,7 @@ class InChargeClient:
         extension: str,
         start: datetime,
         end: datetime,
+        request_started_at: datetime | None = None,
     ) -> str | None:
         if not isinstance(payload, dict) or not isinstance(payload.get("content"), list):
             return None
@@ -918,6 +919,16 @@ class InChargeClient:
             if notification_end and notification_end != end_label:
                 continue
 
+            if request_started_at is not None:
+                # Multiple near-identical FILE notifications (same name and
+                # date labels) can pile up over time. Only accept ones
+                # created for *this* request, otherwise a stale/already
+                # consumed file reference gets picked, which then returns
+                # 204 forever.
+                notified_at = dt_util.parse_datetime(str(notification.get("timestamp") or ""))
+                if notified_at is None or notified_at < request_started_at:
+                    continue
+
             url = notification.get("url")
             if url:
                 return str(url)
@@ -934,6 +945,7 @@ class InChargeClient:
         extension: str,
         start: datetime,
         end: datetime,
+        request_started_at: datetime | None = None,
     ) -> str | None:
         query = urlencode({"version": "2", "selectedAccount": account_number})
         path = f"/live-notifications-v2/api/notifications?{query}"
@@ -954,6 +966,7 @@ class InChargeClient:
             extension=extension,
             start=start,
             end=end,
+            request_started_at=request_started_at,
         )
 
     async def async_download_mycharge_charging_history_report(
@@ -993,6 +1006,9 @@ class InChargeClient:
             }
         )
         history_path = f"/usage-data-pcu-readmodel/api/pcu-charging-history?{query}"
+        # Recorded before triggering the export so we can later ignore any
+        # stale FILE notification from an earlier/duplicate request.
+        request_started_at = datetime.now(UTC)
         status, headers, content = await self._portal_request_raw(
             "GET",
             history_path,
@@ -1042,6 +1058,7 @@ class InChargeClient:
                         extension=extension,
                         start=start,
                         end=end,
+                        request_started_at=request_started_at,
                     )
                 )
                 if notification_url:
