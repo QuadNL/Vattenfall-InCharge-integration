@@ -17,7 +17,7 @@
       },
       "add_first_mycharge_account": {
         "title": "Add My InCharge account",
-        "description": "Open the My InCharge login URL below in your browser, complete the login and OTP flow, then paste the full final callback URL here. Leave this empty to skip this step and add a My InCharge account later from Configure.\n\nYour browser will NOT visibly navigate to that final URL (it starts with nl.nuon.laadpunten://, which desktop browsers cannot open) and it will not appear in the address bar. To find it: press Ctrl+H to open your browser history right after finishing the OTP step, and copy the most recent entry - it will start with 'nl.nuon.laadpunten://login?code=...'. Paste that whole link below. This link expires quickly (well under a minute), so copy and paste it right away.\n\n{auth_url}",
+        "description": "Open the My InCharge login URL below in your browser, complete the login and OTP flow, then paste the full final callback URL here. Leave this empty to skip this step and add a My InCharge account later from Configure.\n\nYour browser will NOT visibly navigate to that final URL (it starts with nl.nuon.laadpunten://, which desktop browsers cannot open) and it will not appear in the address bar. Use a private/incognito window and open DevTools (F12) with the Network tab open before you start. Right after entering the OTP code, filter the Network tab on 'authorize?' and open the last matching request; copy the 'location' response header value - it starts with 'nl.nuon.laadpunten://login?code=...'. Paste that whole link below. This link expires quickly (well under a minute), so copy and paste it right away.\n\n{auth_url}",
         "data": {
           "callback_url": "My InCharge callback URL"
         }
@@ -58,7 +58,7 @@
       },
       "mycharge_account": {
         "title": "Add or update My InCharge account",
-        "description": "Use this to connect My InCharge for the first time, or to refresh an expired or revoked My InCharge session. Open the login URL below in your browser, complete the login and OTP flow, then paste the full final callback URL here. If your browser shows an error after login, copy the URL from the address bar or browser error message.\n\n{auth_url}",
+        "description": "Use this to connect My InCharge for the first time, or to refresh an expired or revoked My InCharge session. Open the login URL below in your browser, complete the login and OTP flow, then paste the full final callback URL here.\n\nYour browser will NOT visibly navigate to that final URL (it starts with nl.nuon.laadpunten://, which desktop browsers cannot open) and it will not appear in the address bar. Use a private/incognito window and open DevTools (F12) with the Network tab open before you start. Right after entering the OTP code, filter the Network tab on 'authorize?' and open the last matching request; copy the 'location' response header value - it starts with 'nl.nuon.laadpunten://login?code=...'. Paste that whole link below. This link expires quickly (well under a minute), so copy and paste it right away.\n\n{auth_url}",
         "data": {
           "callback_url": "My InCharge callback URL"
         }
