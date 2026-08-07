@@ -126,3 +126,5 @@ Vattenfall InCharge
 ```
 
 This domain is intentionally broad enough for both public charging stations and My InCharge account features.
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/U2W120MCVZ)
